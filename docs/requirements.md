@@ -13,8 +13,10 @@ scale to public use later.
 
 | Area | Choice | Notes |
 |---|---|---|
-| Frontend | Flutter | One codebase for web (planning at a desk) and iOS/Android (on the road). |
-| Maps | `flutter_map` + OpenStreetMap-based tiles | Tile provider with a free tier (e.g. MapTiler or Stadia). |
+| Frontend | React + TypeScript, built with Vite | Web-first single-page app. Responsive, so it works in phone browsers from day one. |
+| Maps | MapLibre GL via `react-map-gl` + OpenStreetMap-based tiles | Tile provider with a free tier (e.g. MapTiler or Stadia). |
+| Drag-and-drop | dnd-kit | Reordering and moving stops between days; supports mouse and touch. |
+| Hosting | Static hosting (Netlify, Vercel, or Cloudflare Pages) | Free tier; no app server needed since Supabase is the backend. |
 | Backend | Supabase | Postgres (+ PostGIS), Auth, Realtime, Edge Functions. |
 | Login | Supabase Auth | Email magic link, Google, Apple. No passwords stored by us. |
 | Authorization | Postgres row-level security (RLS) | Trip access enforced in the database, based on trip membership. |
@@ -145,7 +147,8 @@ Notes:
 2. **Sharing**: email invites with roles; presence ("who's here", what they're editing).
 3. **Discovery**: suggested stops along the route (OpenStreetMap via Overpass, OpenTripMap,
    Wikipedia/Wikidata, NPS, Recreation.gov), filtered by category and detour time.
-4. **Later**: offline access on mobile; regional gas prices (EIA by region); export to
+4. **Later**: mobile: first an installable web app (PWA) with offline access, then a native
+   app via React Native (Expo) if needed, reusing the data and calculation code; regional gas prices (EIA by region); export to
    Google Maps / GPX; multiple cost items per stop; read-only public links.
 
 ## 10. Out of scope for now
