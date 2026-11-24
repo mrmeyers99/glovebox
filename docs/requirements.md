@@ -11,20 +11,21 @@ scale to public use later.
 
 ## 1. Technology
 
-| Area | Choice | Notes |
-|---|---|---|
-| Frontend | React + TypeScript, built with Vite | Web-first single-page app. Responsive, so it works in phone browsers from day one. |
-| Maps | MapLibre GL via `react-map-gl` + OpenStreetMap-based tiles | Tile provider with a free tier (e.g. MapTiler or Stadia). |
-| Drag-and-drop | dnd-kit | Reordering and moving stops between days; supports mouse and touch. |
-| Hosting | Static hosting (Netlify, Vercel, or Cloudflare Pages) | Free tier; no app server needed since Supabase is the backend. |
-| Backend | Supabase | Postgres (+ PostGIS), Auth, Realtime, Edge Functions. |
-| Login | Supabase Auth | Email magic link, Google, Apple. No passwords stored by us. |
-| Authorization | Postgres row-level security (RLS) | Trip access enforced in the database, based on trip membership. |
-| Server logic | Supabase Edge Functions (TypeScript) | Proxy and cache third-party APIs so keys never ship in the app. |
-| Routing | OpenRouteService | Free tier ~2,000 requests/day. Results cached (see `route_cache`). |
-| Gas price | U.S. EIA API | Weekly national average retail gasoline price, fetched and cached. |
+| Area          | Choice                                                     | Notes                                                                                   |
+| ------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Frontend      | React + TypeScript, built with Vite                        | Web-first single-page app. Responsive, so it works in phone browsers from day one.      |
+| Maps          | MapLibre GL via `react-map-gl` + OpenStreetMap-based tiles | Tile provider with a free tier (e.g. MapTiler or Stadia).                               |
+| Drag-and-drop | dnd-kit                                                    | Reordering and moving stops between days; supports mouse and touch.                     |
+| Hosting       | Static hosting (Netlify, Vercel, or Cloudflare Pages)      | Free tier; no app server needed since Supabase is the backend.                          |
+| Backend       | Supabase                                                   | Postgres, Auth, Realtime, Edge Functions. PostGIS can be added for discovery (phase 3). |
+| Login         | Supabase Auth                                              | Email magic link, Google, Apple. No passwords stored by us.                             |
+| Authorization | Postgres row-level security (RLS)                          | Trip access enforced in the database, based on trip membership.                         |
+| Server logic  | Supabase Edge Functions (TypeScript)                       | Proxy and cache third-party APIs so keys never ship in the app.                         |
+| Routing       | OpenRouteService                                           | Free tier ~2,000 requests/day. Results cached (see `route_cache`).                      |
+| Gas price     | U.S. EIA API                                               | Weekly national average retail gasoline price, fetched and cached.                      |
 
 ### Scaling considerations
+
 - Nothing in the design assumes a small user base. All access goes through RLS and trip membership.
 - Routing is the first expected bottleneck. Mitigations: cache by coordinate pair
   across all trips, and only recompute legs that changed. Later: paid plan or self-hosted
@@ -42,7 +43,7 @@ scale to public use later.
   - **Editor**: can edit days, stops, notes, costs, and trip settings.
   - **Viewer**: read-only.
 - Invites to people without an account are held until they sign up with that email.
-- *Later:* read-only public share link.
+- _Later:_ read-only public share link.
 
 ## 3. Simultaneous editing
 
@@ -51,7 +52,7 @@ scale to public use later.
 - Stop ordering uses fractional ordering keys so concurrent drags don't clobber each other.
 - Concurrent edits to the same field: last write wins.
 - Each stop records who last edited it and when.
-- *Later:* presence indicators: who is viewing, and what they're editing (e.g. "Sarah is editing Day 3").
+- _Later:_ presence indicators: who is viewing, and what they're editing (e.g. "Sarah is editing Day 3").
 
 ## 4. Trips
 
@@ -93,9 +94,10 @@ scale to public use later.
     - **Move to day…**
     - **Skip / Unskip**
     - Edit, Delete
-- *Later:* multiple cost line items per stop.
+- _Later:_ multiple cost line items per stop.
 
 ### Skip
+
 - Skipping is **shared**: it changes the plan for everyone on the trip, and syncs live.
 - A skipped stop:
   - is removed from the map (a **Show skipped** toggle shows faded markers so they can be found again),
@@ -110,10 +112,10 @@ scale to public use later.
 All derived values are computed from stops and cached routes, not stored, so they can't drift
 out of sync.
 
-- **Legs** connect consecutive *active* (non-skipped) stops across the whole trip, in day order.
+- **Legs** connect consecutive _active_ (non-skipped) stops across the whole trip, in day order.
 - Per leg: driving distance, driving time, gas cost.
   - Gas cost = distance (miles) ÷ trip mpg × gas price per gallon.
-- **Day attribution**: a leg counts toward the day of the stop it *arrives at*. So the drive
+- **Day attribution**: a leg counts toward the day of the stop it _arrives at_. So the drive
   from last night's stop to this morning's first stop counts toward today, and an empty day
   has zero driving.
 - Per day: driving distance, driving time, gas cost, other costs (by category), total cost.
@@ -123,18 +125,19 @@ out of sync.
 
 ## 8. Data model (first pass)
 
-| Table | Key fields |
-|---|---|
-| `profiles` | `id` (= auth user), `display_name`, `default_mpg` |
-| `trips` | `id`, `owner_id`, `name`, `start_date`, `mpg`, `gas_price_per_gallon`, timestamps |
-| `trip_members` | `trip_id`, `user_id`, `role` (owner / editor / viewer) |
-| `trip_invites` | `trip_id`, `email`, `role`, `invited_by`, `accepted_at` |
-| `days` | `id`, `trip_id`, `position`, `notes` |
-| `stops` | `id`, `trip_id`, `day_id`, `position` (fractional key), `kind` (start / waypoint / end), `name`, `location` (PostGIS point), `address`, `notes`, `cost_amount`, `cost_category`, `arrival_time`, `stay_minutes`, `skipped`, `updated_by`, `updated_at` |
-| `route_cache` | `from_point`, `to_point`, `distance_m`, `duration_s`, `geometry`, `fetched_at` |
-| `gas_price_cache` | `region` (v1: `US`), `price_per_gallon`, `as_of`, `fetched_at` |
+| Table             | Key fields                                                                                                                                                                                                                               |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `profiles`        | `id` (= auth user), `display_name`, `default_mpg`                                                                                                                                                                                        |
+| `trips`           | `id`, `owner_id`, `name`, `start_date`, `mpg`, `gas_price_per_gallon`, timestamps                                                                                                                                                        |
+| `trip_members`    | `trip_id`, `user_id`, `role` (owner / editor / viewer)                                                                                                                                                                                   |
+| `trip_invites`    | `trip_id`, `email`, `role`, `invited_by`, `accepted_at`                                                                                                                                                                                  |
+| `days`            | `id`, `trip_id`, `position`, `notes`                                                                                                                                                                                                     |
+| `stops`           | `id`, `trip_id`, `day_id`, `position` (fractional key), `kind` (start / waypoint / end), `name`, `lat`, `lng`, `address`, `notes`, `cost_amount`, `cost_category`, `arrival_time`, `stay_minutes`, `skipped`, `updated_by`, `updated_at` |
+| `route_cache`     | `from_point`, `to_point`, `distance_m`, `duration_s`, `geometry`, `fetched_at`                                                                                                                                                           |
+| `gas_price_cache` | `region` (v1: `US`), `price_per_gallon`, `as_of`, `fetched_at`                                                                                                                                                                           |
 
 Notes:
+
 - Days have an explicit `position`; dates are derived, not stored.
 - `route_cache` is keyed by rounded coordinates so identical legs are shared across trips.
 - RLS: a user can read a trip and its days/stops if they are a member; write if owner or editor.
