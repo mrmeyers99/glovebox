@@ -10,6 +10,7 @@ Collaborative road-trip planner. Requirements and data model: `docs/requirements
 - `supabase/migrations/` — database schema, row-level security, triggers.
 - `supabase/tests/` — permission tests run against plain Postgres (`auth_stub.sql` fakes Supabase auth; test-only).
 - `docs/` — requirements.
+- `render.yaml` — Render static-site deploy. `.github/workflows/deploy-db.yml` — applies migrations to Supabase on merge to `main`.
 
 ## Commands (run from the repo root)
 
