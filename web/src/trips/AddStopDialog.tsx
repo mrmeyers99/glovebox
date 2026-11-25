@@ -5,7 +5,6 @@ import {
   useState,
   type Dispatch,
   type FormEvent,
-  type KeyboardEvent,
 } from 'react'
 import type { CostCategory, Day, Stop } from '../lib/database.types'
 import type { Place } from '../lib/geocode'
@@ -17,13 +16,12 @@ import {
   nameAfterPick,
   newStopPosition,
   parseStopForm,
-  placeQuery,
   searchFocus,
   type StopFormErrors,
   type StopFormInput,
 } from './addStop'
+import { PlaceSearchField } from './PlaceSearchField'
 import type { TripAction } from './tripState'
-import { usePlaceSearch } from './usePlaceSearch'
 
 type Props = {
   tripId: string
@@ -48,7 +46,6 @@ export function AddStopDialog({
   onClose,
 }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null)
-  const [query, setQuery] = useState('')
   const [place, setPlace] = useState<Place | null>(null)
   const [input, setInput] = useState<StopFormInput>(emptyStopForm)
   const [errors, setErrors] = useState<StopFormErrors>({})
@@ -57,7 +54,6 @@ export function AddStopDialog({
 
   // Bias search toward where the trip is at that point; fixed while open.
   const [focus] = useState(() => searchFocus(days, stops, dayId))
-  const search = usePlaceSearch(query, focus)
   const dayStops = useMemo(
     () => stops.filter((s) => s.day_id === dayId),
     [stops, dayId],
@@ -79,16 +75,7 @@ export function AddStopDialog({
       name: nameAfterPick(prev.name, place, picked),
     }))
     setPlace(picked)
-    setQuery('')
     setErrors((prev) => ({ ...prev, place: undefined, name: undefined }))
-  }
-
-  function onSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    // Enter picks the top result instead of submitting the form.
-    if (event.key !== 'Enter') return
-    event.preventDefault()
-    const [first] = search.results
-    if (first && !search.searching) pick(first)
   }
 
   async function save(event: FormEvent) {
@@ -141,8 +128,6 @@ export function AddStopDialog({
     ) : null
   }
 
-  const showResults = placeQuery(query) !== null
-
   return (
     <dialog
       ref={dialogRef}
@@ -154,39 +139,13 @@ export function AddStopDialog({
       <form className="dialog-form" noValidate onSubmit={save}>
         <h2 id="add-stop-title">Add a stop to Day {dayNumber}</h2>
 
-        <div className="field">
-          <label htmlFor={fieldId('place')}>Place</label>
-          <input
-            id={fieldId('place')}
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onSearchKeyDown}
-            placeholder={place ? 'Search to change the place' : 'Search places'}
-            autoComplete="off"
-            autoFocus
-            aria-invalid={errors.place ? true : undefined}
-            aria-describedby={
-              errors.place
-                ? `${fieldId('place')}-error`
-                : 'add-stop-place-picked'
-            }
-          />
-          {showResults && (
-            <PlaceResults
-              results={search.results}
-              searching={search.searching}
-              error={search.error}
-              onPick={pick}
-            />
-          )}
-          <span id="add-stop-place-picked" className="field-hint">
-            {place
-              ? `Selected: ${[place.name, place.address].filter(Boolean).join(', ')}`
-              : 'Pick a result to set the location.'}
-          </span>
-          {fieldError('place')}
-        </div>
+        <PlaceSearchField
+          id={fieldId('place')}
+          place={place}
+          focus={focus}
+          error={errors.place}
+          onPick={pick}
+        />
 
         <div className="field">
           <label htmlFor={fieldId('name')}>Name</label>
@@ -270,49 +229,4 @@ export function AddStopDialog({
 
 function fieldId(field: FieldName) {
   return `add-stop-${field}`
-}
-
-function PlaceResults({
-  results,
-  searching,
-  error,
-  onPick,
-}: {
-  results: Place[]
-  searching: boolean
-  error: string | null
-  onPick: (place: Place) => void
-}) {
-  if (error) {
-    return (
-      <p role="alert" className="field-error">
-        {error}
-      </p>
-    )
-  }
-  if (results.length === 0) {
-    return (
-      <p className="field-hint" aria-live="polite">
-        {searching ? 'Searching…' : 'No places found.'}
-      </p>
-    )
-  }
-  return (
-    <ul
-      className="place-results"
-      aria-label="Search results"
-      aria-busy={searching}
-    >
-      {results.map((result) => (
-        <li key={`${result.lat},${result.lng},${result.name}`}>
-          <button type="button" onClick={() => onPick(result)}>
-            <span className="place-name">{result.name}</span>
-            {result.address && (
-              <span className="place-address">{result.address}</span>
-            )}
-          </button>
-        </li>
-      ))}
-    </ul>
-  )
 }
