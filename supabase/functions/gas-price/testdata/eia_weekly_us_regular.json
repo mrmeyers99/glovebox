@@ -1,0 +1,36 @@
+{
+  "response": {
+    "total": "1745",
+    "dateFormat": "YYYY-MM-DD",
+    "frequency": "weekly",
+    "data": [
+      {
+        "period": "2026-11-23",
+        "duoarea": "NUS",
+        "area-name": "U.S.",
+        "product": "EPMR",
+        "product-name": "Regular Gasoline",
+        "process": "PTE",
+        "process-name": "Retail Sales",
+        "series": "EMM_EPMR_PTE_NUS_DPG",
+        "series-description": "U.S. Regular All Formulations Retail Gasoline Prices (Dollars per Gallon)",
+        "value": "3.061",
+        "units": "$/GAL"
+      }
+    ],
+    "description": "Gasoline and Diesel Fuel Update"
+  },
+  "request": {
+    "command": "/v2/petroleum/pri/gnd/data/",
+    "params": {
+      "frequency": "weekly",
+      "data": ["value"],
+      "facets": { "series": ["EMM_EPMR_PTE_NUS_DPG"] },
+      "sort": [{ "column": "period", "direction": "desc" }],
+      "offset": 0,
+      "length": 1
+    }
+  },
+  "apiVersion": "2.1.10",
+  "ExcelAddInVersion": "2.1.0"
+}

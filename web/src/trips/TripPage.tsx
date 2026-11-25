@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { Trip } from '../lib/database.types'
+import { AddStopDialog } from './AddStopDialog'
 import { DayListPanel } from './DayListPanel'
 import { MapPanel } from './MapPanel'
+import type { StopSelection } from './mapView'
 import { ShareDialog } from './ShareDialog'
 import { TripSettingsDialog } from './TripSettingsDialog'
 import { useTrip } from './useTrip'
@@ -25,8 +27,22 @@ export function TripPage() {
   } = useTrip(tripId)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [addStopDay, setAddStopDay] = useState<{
+    dayId: string
+    dayNumber: number
+  } | null>(null)
   // Which panel shows at phone width; desktop shows both.
   const [view, setView] = useState<View>('list')
+  // Stop selected in the day list or on the map; the other panel follows.
+  const [selection, setSelection] = useState<StopSelection | null>(null)
+  const selectFromList = useCallback(
+    (stopId: string) => setSelection({ stopId, source: 'list' }),
+    [],
+  )
+  const selectFromMap = useCallback(
+    (stopId: string) => setSelection({ stopId, source: 'map' }),
+    [],
+  )
 
   if (!trip) {
     return (
@@ -86,14 +102,26 @@ export function TripPage() {
         className="trip-panel trip-panel-list"
         aria-label="Days and stops"
       >
-        <DayListPanel trip={trip} days={days} stops={stops} />
+        <DayListPanel
+          trip={trip}
+          days={days}
+          stops={stops}
+          selection={selection}
+          onSelectStop={selectFromList}
+          onAddStop={canEdit ? setAddStopDay : undefined}
+        />
       </section>
       <section
         id="trip-panel-map"
         className="trip-panel trip-panel-map"
         aria-label="Map"
       >
-        <MapPanel stops={stops} />
+        <MapPanel
+          days={days}
+          stops={stops}
+          selection={selection}
+          onSelectStop={selectFromMap}
+        />
       </section>
 
       {settingsOpen && (
@@ -101,6 +129,17 @@ export function TripPage() {
           trip={trip}
           dispatch={dispatch}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+      {addStopDay && canEdit && (
+        <AddStopDialog
+          tripId={trip.id}
+          dayId={addStopDay.dayId}
+          dayNumber={addStopDay.dayNumber}
+          days={days}
+          stops={stops}
+          dispatch={dispatch}
+          onClose={() => setAddStopDay(null)}
         />
       )}
       {shareOpen && role && (

@@ -19,7 +19,8 @@ describe('formatMiles', () => {
 describe('formatDuration', () => {
   it('shows hours and minutes', () => {
     expect(formatDuration(5 * 3600 + 20 * 60)).toBe('5h 20m')
-    expect(formatDuration(2 * 3600)).toBe('2h 0m')
+    expect(formatDuration(2 * 3600 + 5 * 60)).toBe('2h 05m')
+    expect(formatDuration(2 * 3600)).toBe('2h 00m')
   })
 
   it('shows minutes only under an hour', () => {
@@ -29,7 +30,7 @@ describe('formatDuration', () => {
 
   it('rounds to the nearest minute, carrying into hours', () => {
     expect(formatDuration(89)).toBe('1m')
-    expect(formatDuration(3599)).toBe('1h 0m')
+    expect(formatDuration(3599)).toBe('1h 00m')
   })
 })
 

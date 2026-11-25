@@ -105,7 +105,11 @@ export type Database = {
         'name',
         'id' | 'owner_id' | 'start_date' | 'mpg' | 'gas_price_per_gallon'
       >
-      trip_members: Table<TripMember, 'trip_id' | 'user_id' | 'role', never>
+      // Only the role can be updated (column-level grant).
+      trip_members: Omit<
+        Table<TripMember, 'trip_id' | 'user_id' | 'role', never>,
+        'Update'
+      > & { Update: Partial<Pick<TripMember, 'role'>> }
       trip_invites: Table<TripInvite, 'trip_id' | 'email' | 'role', 'id'>
       days: Table<Day, 'trip_id' | 'position', 'id' | 'notes'>
       stops: Table<
