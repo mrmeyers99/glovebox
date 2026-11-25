@@ -89,14 +89,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** One result from the route function as a RouteEntry. */
 export function toRouteEntry(result: unknown): RouteEntry {
   if (isRecord(result)) {
-    const { distance_m: distanceM, duration_s: durationS, error } = result
+    const {
+      distance_m: distanceM,
+      duration_s: durationS,
+      geometry,
+      error,
+    } = result
     if (
       typeof distanceM === 'number' &&
       typeof durationS === 'number' &&
       distanceM >= 0 &&
       durationS >= 0
     ) {
-      return { status: 'ok', route: { distanceM, durationS } }
+      const route: RouteInfo = { distanceM, durationS }
+      if (typeof geometry === 'string' && geometry !== '') {
+        route.geometry = geometry
+      }
+      return { status: 'ok', route }
     }
     if (typeof error === 'string') {
       return { status: 'failed', final: FINAL_ERRORS.has(error) }

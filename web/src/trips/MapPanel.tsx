@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import type { Day, Stop } from '../lib/database.types'
+import type { TripSummary } from '../lib/tripMath'
 import type { StopSelection } from './mapView'
 
 // Code-split: the map library is only downloaded on the trip page.
@@ -9,11 +10,14 @@ const TripMap = lazy(() => import('./TripMap'))
 export function MapPanel({
   days,
   stops,
+  summary,
   selection,
   onSelectStop,
 }: {
   days: readonly Day[]
   stops: readonly Stop[]
+  /** Legs with their routes, from useTripSummary. */
+  summary: TripSummary
   selection: StopSelection | null
   onSelectStop: (stopId: string) => void
 }) {
@@ -31,6 +35,7 @@ export function MapPanel({
           <TripMap
             days={days}
             stops={stops}
+            summary={summary}
             showSkipped={showSkipped}
             selection={selection}
             onSelectStop={onSelectStop}

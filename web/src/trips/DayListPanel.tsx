@@ -5,21 +5,19 @@ import type { Day, Stop, Trip } from '../lib/database.types'
 import { formatDayDate, formatMoney, formatTimeOfDay } from '../lib/format'
 import {
   dayDate,
-  summarizeTrip,
   type DaySummary,
   type Leg,
+  type TripSummary,
 } from '../lib/tripMath'
-import { toDayInput, toStopInput } from '../lib/tripRows'
-import { effectiveGasPrice } from '../lib/gasPrice'
 import { dayColor, type StopSelection } from './mapView'
 import { LegItem, TotalsList, TripTotalsBar } from './RouteTotals'
-import { useNationalAverage } from './useNationalAverage'
-import { useRoutes } from './useRoutes'
 
 export function DayListPanel({
   trip,
   days,
   stops,
+  summary,
+  gasPriceKnown,
   selection,
   onSelectStop,
   onAddStop,
@@ -27,39 +25,15 @@ export function DayListPanel({
   trip: Trip
   days: Day[]
   stops: Stop[]
+  /** Legs and totals, from useTripSummary. */
+  summary: TripSummary
+  /** False while the national average gas price is loading or unavailable. */
+  gasPriceKnown: boolean
   selection: StopSelection | null
   onSelectStop: (stopId: string) => void
   /** Shows an Add stop button on each day; pass only for owners and editors. */
   onAddStop?: (day: { dayId: string; dayNumber: number }) => void
 }) {
-  // The trip's own price, else the national average (null until it loads).
-  const nationalAverage = useNationalAverage()
-  const gasPrice = effectiveGasPrice(trip.gas_price_per_gallon, nationalAverage)
-  const gasPriceKnown = gasPrice !== null
-  const mpg = Number(trip.mpg)
-
-  const dayInputs = useMemo(() => days.map(toDayInput), [days])
-  const stopInputs = useMemo(() => stops.map(toStopInput), [stops])
-  // The legs the trip needs, before any routes are known.
-  const neededLegs = useMemo(
-    () =>
-      summarizeTrip(dayInputs, stopInputs, {
-        mpg,
-        gasPricePerGallon: gasPrice ?? 0,
-        route: () => undefined,
-      }).legs,
-    [dayInputs, stopInputs, mpg, gasPrice],
-  )
-  const route = useRoutes(neededLegs)
-  const summary = useMemo(
-    () =>
-      summarizeTrip(dayInputs, stopInputs, {
-        mpg,
-        gasPricePerGallon: gasPrice ?? 0,
-        route,
-      }),
-    [dayInputs, stopInputs, mpg, gasPrice, route],
-  )
   // Each leg is shown above the stop it arrives at.
   const legsByArrival = useMemo(
     () => new Map(summary.legs.map((leg) => [leg.to.id, leg])),
