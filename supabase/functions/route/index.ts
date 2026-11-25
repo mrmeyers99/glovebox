@@ -10,9 +10,11 @@
 // lookup, so the same leg is fetched once for everyone. Cache entries older
 // than 90 days (CACHE_LIFETIME_DAYS) are ignored and refetched, then
 // overwritten. Misses that connect end to end (a trip's legs in order) are
-// fetched in one multi-waypoint ORS request; if that request fails, its legs
-// are retried one by one so only the legs that really fail come back as errors.
-// Failed legs aren't cached.
+// fetched in one multi-waypoint ORS request. If that request finds no route
+// (or one too long), the chain is split in half and each half retried, so only
+// the legs that really fail come back as errors. Each request makes at most
+// MAX_ORS_CALLS ORS calls within ORS_BUDGET_MS; legs left over then come back
+// as unavailable. Failed legs aren't cached.
 import { requireUser } from '../_shared/auth.ts'
 import { handle, HttpError, json } from '../_shared/http.ts'
 import { type RouteCache, supabaseRouteCache } from './cache.ts'
@@ -32,7 +34,7 @@ import {
   uniqueLegs,
   zeroRoute,
 } from './legs.ts'
-import { fetchChain } from './ors.ts'
+import { fetchChain, ORS_TIMEOUT_MS } from './ors.ts'
 
 export interface Deps {
   fetchFn?: typeof fetch
@@ -111,6 +113,11 @@ export function createHandler({
   })
 }
 
+/** The most ORS calls one request may make, retries included. */
+export const MAX_ORS_CALLS = 12
+/** The total time one request may spend waiting on ORS. */
+export const ORS_BUDGET_MS = 30_000
+
 /** Fetches missed legs from ORS, by legKey. Never throws. */
 async function routeMisses(
   misses: Leg[],
@@ -126,24 +133,41 @@ async function routeMisses(
   }
 
   let stopped: LegErrorCode | undefined
+  let calls = 0
+  const deadline = Date.now() + ORS_BUDGET_MS
   const fail = (chain: Leg[], code: LegErrorCode) => {
     for (const leg of chain) results.set(legKey(leg), legError(code))
   }
   const queue = chainLegs(misses)
   for (let chain = queue.shift(); chain; chain = queue.shift()) {
+    const remainingMs = deadline - Date.now()
+    if (!stopped && (calls >= MAX_ORS_CALLS || remainingMs <= 0)) {
+      console.error(`route: ORS call budget used up after ${calls} calls`)
+      stopped = 'unavailable'
+    }
     if (stopped) {
       fail(chain, stopped)
       continue
     }
-    const outcome = await fetchChain(chain, apiKey, fetchFn)
+    calls++
+    const outcome = await fetchChain(
+      chain,
+      apiKey,
+      fetchFn,
+      Math.min(ORS_TIMEOUT_MS, remainingMs),
+    )
     if (outcome.ok) {
       chain.forEach((leg, i) => results.set(legKey(leg), outcome.routes[i]))
     } else if (outcome.fatal) {
       stopped = outcome.error
       fail(chain, outcome.error)
-    } else if (chain.length > 1) {
-      // Find out which legs fail: retry each on its own, next.
-      queue.unshift(...chain.map((leg) => [leg]))
+    } else if (
+      chain.length > 1 &&
+      (outcome.error === 'no_route' || outcome.error === 'too_long')
+    ) {
+      // Some leg in the chain fails: split it in half and retry each half, next.
+      const mid = Math.ceil(chain.length / 2)
+      queue.unshift(chain.slice(0, mid), chain.slice(mid))
     } else {
       fail(chain, outcome.error)
     }

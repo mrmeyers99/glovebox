@@ -10,6 +10,9 @@ import {
 const ORS_DIRECTIONS =
   'https://api.openrouteservice.org/v2/directions/driving-car/geojson'
 
+/** The longest a single ORS request may take. */
+export const ORS_TIMEOUT_MS = 15_000
+
 export type ChainOutcome =
   | { ok: true; routes: Route[] }
   | {
@@ -32,6 +35,7 @@ export async function fetchChain(
   chain: Leg[],
   apiKey: string,
   fetchFn: typeof fetch = fetch,
+  timeoutMs = ORS_TIMEOUT_MS,
 ): Promise<ChainOutcome> {
   let res: Response
   try {
@@ -45,7 +49,7 @@ export async function fetchChain(
       // Instructions stay on (the default): ORS only returns per-leg segments
       // with them.
       body: JSON.stringify({ coordinates: chainCoordinates(chain) }),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (error) {
     console.error('ORS directions request failed', error)
@@ -62,7 +66,14 @@ export async function fetchChain(
       return { ok: false, error: 'unavailable', fatal: false }
     }
   }
-  const text = await res.text()
+  // The error body is only for logging and the ORS error code; if it can't be
+  // read, classify by status alone rather than throwing.
+  let text = ''
+  try {
+    text = await res.text()
+  } catch (error) {
+    console.error('ORS directions error body could not be read', error)
+  }
   if (res.status === 429) {
     console.error('ORS directions rate limit reached', text)
     return { ok: false, error: 'rate_limited', fatal: true }

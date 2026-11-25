@@ -1,7 +1,7 @@
 import { assert, assertEquals } from '@std/assert'
 import { invokeRequest, userToken } from '../_shared/test_env.ts'
 import type { RouteCache } from './cache.ts'
-import { createHandler } from './index.ts'
+import { createHandler, MAX_ORS_CALLS } from './index.ts'
 import { type Leg, legKey, type Route } from './legs.ts'
 
 Deno.env.set('ORS_API_KEY', 'ors-test-key')
@@ -242,9 +242,81 @@ Deno.test('a leg with no route fails alone, not the batch', async () => {
     error: 'no_route',
     message: 'No driving route found between these points',
   })
-  // One chain request, then one per leg.
-  assertEquals(calls.length, 4)
+  // The chain, then its halves: A→B→C (routes) and C→D (no route).
+  assertEquals(calls.length, 3)
   assertEquals(rows.size, 2, 'failures are not cached')
+})
+
+/** A connected trip of n legs, northward in 0.01° steps from A. */
+function longTrip(n: number) {
+  return Array.from({ length: n }, (_, i) => ({
+    from: p(40 + i * 0.01, -75),
+    to: p(40 + (i + 1) * 0.01, -75),
+  }))
+}
+
+Deno.test('finds one failing leg in a long chain in a few calls', async () => {
+  // Any request that includes the leg arriving at 40.3 has no route.
+  const { handler, calls } = setup((coords) =>
+    coords.some((c, i) => i > 0 && Math.abs(c[1] - 40.3) < 1e-9)
+      ? noRoute()
+      : undefined,
+  )
+  const pairs = longTrip(40)
+  const { body } = await post(handler, { pairs })
+  const failed = body.results
+    .map((r: { error?: string }, i: number) => (r.error ? i : -1))
+    .filter((i: number) => i >= 0)
+  assertEquals(failed, [29])
+  assertEquals(body.results[29].error, 'no_route')
+  // Halving 40 legs down to one takes about 2·log2(40) calls, not 41.
+  assert(calls.length <= 12, `${calls.length} ORS calls`)
+})
+
+Deno.test(
+  'caps ORS calls per request, reporting the rest unavailable',
+  async () => {
+    const { handler, calls } = setup(() => noRoute())
+    const { status, body } = await post(handler, { pairs: longTrip(40) })
+    assertEquals(status, 200)
+    assertEquals(calls.length, MAX_ORS_CALLS)
+    const errors = new Set(body.results.map((r: { error: string }) => r.error))
+    assert(errors.has('unavailable'), 'legs past the cap are unavailable')
+    assertEquals(body.results.length, 40)
+  },
+)
+
+Deno.test('a 5xx from ORS is not retried leg by leg', async () => {
+  const { handler, calls } = setup(
+    () => new Response('upstream error', { status: 502 }),
+  )
+  const { body } = await post(handler, {
+    pairs: [
+      { from: A, to: B },
+      { from: B, to: C },
+    ],
+  })
+  assertEquals(calls.length, 1)
+  assertEquals(
+    body.results.map((r: { error: string }) => r.error),
+    ['unavailable', 'unavailable'],
+  )
+})
+
+Deno.test('an unreadable ORS error body still answers per leg', async () => {
+  const broken = () =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.error(new TypeError('connection reset'))
+        },
+      }),
+      { status: 404 },
+    )
+  const { handler } = setup(broken)
+  const { status, body } = await post(handler, { pairs: [{ from: A, to: B }] })
+  assertEquals(status, 200)
+  assertEquals(body.results[0].error, 'no_route')
 })
 
 Deno.test('a too-long leg is reported as too_long', async () => {
