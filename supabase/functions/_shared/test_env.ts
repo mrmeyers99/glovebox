@@ -32,10 +32,23 @@ export function userToken(
     .sign(privateKey)
 }
 
-/** A request shaped like supabase.functions.invoke() sends. */
-export function invokeRequest(token?: string, method = 'POST'): Request {
+/** A request shaped like supabase.functions.invoke() sends (JSON body if given). */
+export function invokeRequest(
+  token?: string,
+  method = 'POST',
+  body?: unknown,
+  name = 'health',
+): Request {
   const headers = new Headers({ apikey: 'sb_publishable_test' })
   // Signed out, supabase-js sends the publishable key as the bearer token.
   headers.set('authorization', `Bearer ${token ?? 'sb_publishable_test'}`)
-  return new Request(`${url}/functions/v1/health`, { method, headers })
+  if (body === undefined) {
+    return new Request(`${url}/functions/v1/${name}`, { method, headers })
+  }
+  headers.set('content-type', 'application/json')
+  return new Request(`${url}/functions/v1/${name}`, {
+    method,
+    headers,
+    body: JSON.stringify(body),
+  })
 }
