@@ -19,6 +19,7 @@ Collaborative road-trip planner. Requirements and data model: `docs/requirements
 - `npm run dev` — start the web app (needs `web/.env.local`, see `web/.env.example`)
 - `npm run check` — format check, lint, typecheck, unit tests (what CI runs, minus build and DB)
 - `npm run format` — format everything with Prettier
+- `npm run test:coverage -w web` — unit tests with coverage (writes `web/coverage/lcov.info`)
 - `npm run test:db` — apply migrations and run permission tests (needs Postgres via `PG*` env vars)
 - `deno check . && deno lint && deno test --allow-env` — from `supabase/functions` (not covered by `npm run check`)
 
@@ -38,4 +39,6 @@ A pre-commit hook (husky + lint-staged) formats staged files and lints TypeScrip
 - Third-party API keys (routing, gas prices) live only in Supabase Edge Functions, never in `web/`.
 - Every Edge Function calls `requireUser(req)` before doing anything, unless it is deliberately public
   (the gateway JWT check is off). `adminClient()` bypasses RLS; use it only for caches, never trip data.
+- New and changed code needs 90%+ line coverage, components included. CI enforces this on PRs with
+  `diff-cover` against the base branch (web and Edge Functions separately); untouched code isn't checked.
 - Code style: Prettier (no semicolons, single quotes) and oxlint; don't hand-format.
