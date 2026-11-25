@@ -1,0 +1,33 @@
+name: Deploy functions
+
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/functions/**']
+  workflow_dispatch:
+
+# Never run two deploys at once; a newer push waits for the running one.
+concurrency:
+  group: deploy-functions
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy Edge Functions to Supabase
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 3.4.0
+
+      # Deploys every function in supabase/functions with its settings from
+      # supabase/config.jsonc. --use-api bundles on Supabase's side (no Docker).
+      # Functions deleted from the repo are not removed from the project.
+      - name: Deploy functions
+        run: >-
+          supabase functions deploy --remote="$SUPABASE_PROJECT_ID" --use-api --yes
