@@ -3,14 +3,19 @@ import type { Day, Stop } from '../lib/database.types'
 import type { Place } from '../lib/geocode'
 import { comparePositions } from '../lib/tripMath'
 import {
+  canDeleteStop,
+  changedStopFields,
   emptyStopForm,
+  formatStay,
   nameAfterPick,
   newStopPosition,
   parseCost,
   parseStay,
   parseStopForm,
+  placeFromStop,
   placeQuery,
   searchFocus,
+  stopFormFromStop,
   type StopFormInput,
 } from './addStop'
 
@@ -336,5 +341,136 @@ describe('searchFocus', () => {
 
   it('is undefined for a trip with no stops', () => {
     expect(searchFocus(days, [], 'd1')).toBeUndefined()
+  })
+})
+
+describe('formatStay', () => {
+  it('formats minutes the way parseStay reads them', () => {
+    expect(formatStay(0)).toBe('0m')
+    expect(formatStay(45)).toBe('45m')
+    expect(formatStay(120)).toBe('2h')
+    expect(formatStay(90)).toBe('1h 30m')
+    for (const minutes of [0, 5, 45, 60, 90, 125, 1440]) {
+      expect(parseStay(formatStay(minutes))).toBe(minutes)
+    }
+  })
+})
+
+describe('stopFormFromStop', () => {
+  const stop = makeStop('s1', 'd1', 'a0', {
+    name: 'Red Cliffs Lodge',
+    address: 'Moab, UT, USA',
+    lat: 38.7,
+    lng: -109.4,
+    notes: 'Conf #ABC123',
+    cost_amount: 250.5,
+    cost_category: 'lodging',
+    arrival_time: '15:30:00',
+    stay_minutes: 90,
+  })
+
+  it('pre-fills the form from a saved stop', () => {
+    expect(stopFormFromStop(stop)).toEqual({
+      name: 'Red Cliffs Lodge',
+      notes: 'Conf #ABC123',
+      costAmount: '250.50',
+      costCategory: 'lodging',
+      arrivalTime: '15:30',
+      stay: '1h 30m',
+    })
+  })
+
+  it('leaves empty fields blank', () => {
+    expect(stopFormFromStop(makeStop('s2', 'd1', 'a0', { name: 'X' }))).toEqual(
+      { ...emptyStopForm, name: 'X' },
+    )
+  })
+
+  it('shows whole-dollar costs without cents, and accepts string numerics', () => {
+    const fromString = makeStop('s3', 'd1', 'a0', {
+      cost_amount: '120.00' as unknown as number,
+    })
+    expect(stopFormFromStop(fromString).costAmount).toBe('120')
+  })
+
+  it('saves back to the same fields when nothing is changed', () => {
+    const result = parseStopForm(stopFormFromStop(stop), placeFromStop(stop))
+    expect(result).toEqual({
+      ok: true,
+      fields: {
+        name: stop.name,
+        address: stop.address,
+        lat: stop.lat,
+        lng: stop.lng,
+        notes: stop.notes,
+        cost_amount: stop.cost_amount,
+        cost_category: stop.cost_category,
+        arrival_time: '15:30',
+        stay_minutes: stop.stay_minutes,
+      },
+    })
+  })
+
+  it('keeps a missing address missing', () => {
+    const bare = makeStop('s4', 'd1', 'a0', { name: 'Pullout' })
+    const result = parseStopForm(stopFormFromStop(bare), placeFromStop(bare))
+    expect(result.ok && result.fields.address).toBeNull()
+  })
+})
+
+describe('canDeleteStop', () => {
+  it('allows deleting waypoints but not the start or end', () => {
+    expect(canDeleteStop({ kind: 'waypoint' })).toBe(true)
+    expect(canDeleteStop({ kind: 'start' })).toBe(false)
+    expect(canDeleteStop({ kind: 'end' })).toBe(false)
+  })
+})
+
+describe('changedStopFields', () => {
+  const stop = makeStop('s1', 'd1', 'a0', {
+    name: 'Red Cliffs Lodge',
+    address: 'Moab, UT, USA',
+    lat: 38.7,
+    lng: -109.4,
+    notes: 'Conf #ABC123',
+    cost_amount: 250,
+    cost_category: 'lodging',
+    arrival_time: '15:30:45',
+    stay_minutes: 90,
+  })
+  const save = (patch: Partial<StopFormInput>, place = placeFromStop(stop)) => {
+    const result = parseStopForm({ ...stopFormFromStop(stop), ...patch }, place)
+    if (!result.ok) throw new Error('invalid form')
+    return changedStopFields(stop, result.fields)
+  }
+
+  it('is empty when nothing changed, keeping stored seconds', () => {
+    expect(save({})).toEqual({})
+  })
+
+  it('sends only the edited fields', () => {
+    expect(save({ notes: 'Conf #XYZ', stay: '2h' })).toEqual({
+      notes: 'Conf #XYZ',
+      stay_minutes: 120,
+    })
+  })
+
+  it('sends the cost amount and category together', () => {
+    expect(save({ costAmount: '300' })).toEqual({
+      cost_amount: 300,
+      cost_category: 'lodging',
+    })
+    expect(save({ costAmount: '' })).toEqual({
+      cost_amount: null,
+      cost_category: null,
+    })
+  })
+
+  it('sends the whole place when it changes', () => {
+    expect(save({}, { ...moab, address: 'Moab, UT, USA' })).toEqual({
+      address: 'Moab, UT, USA',
+      lat: moab.lat,
+      lng: moab.lng,
+    })
   })
 })

@@ -13,6 +13,7 @@ export function PlaceSearchField({
   place,
   focus,
   error,
+  autoFocus = true,
   onPick,
 }: {
   id: string
@@ -22,6 +23,8 @@ export function PlaceSearchField({
   /** Where to bias results toward. */
   focus?: LatLng
   error?: string
+  /** Focus the search box when it mounts (default true). */
+  autoFocus?: boolean
   onPick: (place: Place) => void
 }) {
   const [query, setQuery] = useState('')
@@ -53,7 +56,7 @@ export function PlaceSearchField({
         onKeyDown={onKeyDown}
         placeholder={place ? 'Search to change the place' : 'Search places'}
         autoComplete="off"
-        autoFocus
+        autoFocus={autoFocus}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : pickedId}
       />
