@@ -7,8 +7,10 @@ import {
   splitDirections,
 } from './legs.ts'
 
+// HeiGIT retired api.openrouteservice.org on 2026-11-24 (it answers 410 Gone);
+// openrouteservice moved under /openrouteservice on api.heigit.org.
 const ORS_DIRECTIONS =
-  'https://api.openrouteservice.org/v2/directions/driving-car/geojson'
+  'https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson'
 
 /** The longest a single ORS request may take. */
 export const ORS_TIMEOUT_MS = 15_000

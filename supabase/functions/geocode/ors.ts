@@ -21,7 +21,9 @@ export type GeocodeRequest =
 export const MAX_QUERY_LENGTH = 200
 export const MAX_RESULTS = 8
 
-const ORS_BASE = 'https://api.openrouteservice.org/geocode'
+// HeiGIT retired api.openrouteservice.org on 2026-11-24 (it answers 410 Gone);
+// geocoding moved to its Pelias API on api.heigit.org.
+const ORS_BASE = 'https://api.heigit.org/pelias/v1'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
