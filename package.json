@@ -14,6 +14,7 @@
     "lint": "npm run lint -w web",
     "typecheck": "npm run typecheck -w web",
     "test": "npm run test -w web",
+    "test:coverage": "npm run test:coverage -w web",
     "test:db": "bash supabase/tests/run-local.sh",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

@@ -58,6 +58,8 @@ import {
 } from './moveStops'
 import { LegItem, TotalsList, TripTotalsBar } from './RouteTotals'
 import type { MenuAnchor } from './stopMenu'
+import { EditingBadges } from './PresenceAvatars'
+import { presenceOutline, type Peer, type PresenceIndex } from './presence'
 import { missingTripEnds, type TripEndKind } from './tripEnds'
 import { useStopMenuTrigger } from './useStopMenuTrigger'
 
@@ -143,6 +145,7 @@ export function DayListPanel({
   onSetTripEnd,
   menuStopId,
   onOpenStopMenu,
+  presence,
 }: {
   trip: Trip
   days: Day[]
@@ -163,8 +166,11 @@ export function DayListPanel({
    */
   onSetTripEnd?: SetTripEnd
   /** The stop whose menu is open, if any. */
-  menuStopId: string | null
-  onOpenStopMenu: OpenStopMenu
+  menuStopId?: string | null
+  /** Gives each stop a menu (see StopMenu). */
+  onOpenStopMenu?: OpenStopMenu
+  /** Who else is editing which stop or day, from usePresence. */
+  presence?: PresenceIndex
 }) {
   // Each leg is shown above the stop it arrives at.
   const legsByArrival = useMemo(
@@ -334,6 +340,8 @@ export function DayListPanel({
               promptEnd={
                 i === summary.days.length - 1 && missingEnds.has('end')
               }
+              editors={presence?.days.get(day.dayId)}
+              stopEditors={presence?.stops}
             />
           ))}
         </ol>
@@ -391,6 +399,8 @@ function DayCard({
   onOpenStopMenu,
   promptStart,
   promptEnd,
+  editors,
+  stopEditors,
 }: {
   summary: DaySummary
   notes: string | null
@@ -407,12 +417,16 @@ function DayCard({
   onAddStop?: (day: { dayId: string; dayNumber: number }) => void
   canMove: boolean
   onSetTripEnd?: SetTripEnd
-  menuStopId: string | null
-  onOpenStopMenu: OpenStopMenu
+  menuStopId?: string | null
+  onOpenStopMenu?: OpenStopMenu
   /** This is the first day and the trip has no start. */
   promptStart: boolean
   /** This is the last day and the trip has no end. */
   promptEnd: boolean
+  /** Others adding a stop to this day. */
+  editors?: Peer[]
+  /** Others editing stops, by stop id. */
+  stopEditors?: Map<string, Peer[]>
 }) {
   const headingId = `day-${summary.dayId}`
   // The whole card is a drop zone, so stops can land on a rest day.
@@ -428,6 +442,8 @@ function DayCard({
       className="day-card"
       aria-labelledby={headingId}
       data-drop-target={dropTarget ? true : undefined}
+      data-presence={editors?.length ? true : undefined}
+      style={presenceOutline(editors)}
     >
       <header className="day-header">
         <h2 id={headingId}>
@@ -440,6 +456,9 @@ function DayCard({
           Day {summary.dayNumber}
         </h2>
         {date && <time dateTime={date}>{formatDayDate(date)}</time>}
+        {editors?.length ? (
+          <EditingBadges peers={editors} verb="adding a stop" />
+        ) : null}
       </header>
       {notes && <p className="day-notes">{notes}</p>}
 
@@ -464,6 +483,7 @@ function DayCard({
           onSetTripEnd={onSetTripEnd}
           menuStopId={menuStopId}
           onOpenStopMenu={onOpenStopMenu}
+          stopEditors={stopEditors}
         />
       )}
 
@@ -530,6 +550,7 @@ function StopList({
   onSetTripEnd,
   menuStopId,
   onOpenStopMenu,
+  stopEditors,
 }: {
   dayId: string
   /** The day's stops in display order. */
@@ -542,8 +563,9 @@ function StopList({
   onSelectStop: (stopId: string) => void
   canMove: boolean
   onSetTripEnd?: SetTripEnd
-  menuStopId: string | null
-  onOpenStopMenu: OpenStopMenu
+  menuStopId?: string | null
+  onOpenStopMenu?: OpenStopMenu
+  stopEditors?: Map<string, Peer[]>
 }) {
   const waypointIds = useMemo(
     () => stops.filter((s) => s.kind === 'waypoint').map((s) => s.id),
@@ -568,6 +590,7 @@ function StopList({
       onSelect: onSelectStop,
       menuOpen: menuStopId === stop.id,
       onOpenMenu: onOpenStopMenu,
+      editors: stopEditors?.get(stop.id),
     }
     return (
       <Fragment key={stop.id}>
@@ -625,6 +648,8 @@ type StopItemProps = {
   menuOpen?: boolean
   /** Gives the stop a "⋯" menu button, right-click and long-press menu. */
   onOpenMenu?: OpenStopMenu
+  /** Others with this stop's edit form open. */
+  editors?: Peer[]
 }
 
 function SortableStopItem({
@@ -711,6 +736,7 @@ function StopItem({
   onSelect,
   menuOpen,
   onOpenMenu,
+  editors,
   nodeRef,
   style,
   placeholder,
@@ -760,7 +786,7 @@ function StopItem({
     <li
       ref={setRef}
       className="stop"
-      style={style}
+      style={{ ...style, ...presenceOutline(editors) }}
       data-kind={stop.kind}
       data-skipped={stop.skipped || undefined}
       data-selected={selected || undefined}
@@ -769,6 +795,7 @@ function StopItem({
       data-drop={dropSide}
       data-sortable={handle ? true : undefined}
       data-menu-open={menuOpen || undefined}
+      data-presence={editors?.length ? true : undefined}
       // The whole row is clickable; the name is a button for keyboard users.
       onClick={() => onSelect(stop.id)}
       {...(openMenu ? menuTrigger : {})}
@@ -783,6 +810,9 @@ function StopItem({
             )}
             {stop.name}
           </button>
+          {editors?.length ? (
+            <EditingBadges peers={editors} verb="editing" />
+          ) : null}
           {stop.arrival_time && (
             <time className="stop-arrival" dateTime={stop.arrival_time}>
               {formatTimeOfDay(stop.arrival_time)}
