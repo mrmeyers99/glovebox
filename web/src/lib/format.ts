@@ -15,12 +15,14 @@ export function formatMiles(miles: number) {
   return `${milesFormat.format(miles)} mi`
 }
 
-/** Seconds as hours and minutes, e.g. `5h 20m`, `45m`, `2h 0m`. */
+/** Seconds as hours and minutes, e.g. `5h 20m`, `45m`, `2h 05m`. */
 export function formatDuration(seconds: number) {
   const totalMinutes = Math.max(0, Math.round(seconds / 60))
   const hours = Math.floor(totalMinutes / 60)
   const minutes = totalMinutes % 60
-  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`
+  return hours > 0
+    ? `${hours}h ${String(minutes).padStart(2, '0')}m`
+    : `${minutes}m`
 }
 
 /** US dollars, e.g. `$1,234.50`. */

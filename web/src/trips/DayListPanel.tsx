@@ -1,22 +1,20 @@
 // Read-only day list: days in order with their dates, notes, stops and totals.
 
-import { useEffect, useMemo, useRef } from 'react'
+import { Fragment, useEffect, useMemo, useRef } from 'react'
 import type { Day, Stop, Trip } from '../lib/database.types'
 import { formatDayDate, formatMoney, formatTimeOfDay } from '../lib/format'
 import {
   dayDate,
   summarizeTrip,
   type DaySummary,
-  type RouteLookup,
+  type Leg,
 } from '../lib/tripMath'
 import { toDayInput, toStopInput } from '../lib/tripRows'
 import { effectiveGasPrice } from '../lib/gasPrice'
-import { formatTotals } from './dayTotals'
 import { dayColor, type StopSelection } from './mapView'
+import { LegItem, TotalsList, TripTotalsBar } from './RouteTotals'
 import { useNationalAverage } from './useNationalAverage'
-
-// Routes aren't fetched yet (#21), so every leg is pending.
-const noRoutes: RouteLookup = () => undefined
+import { useRoutes } from './useRoutes'
 
 export function DayListPanel({
   trip,
@@ -37,15 +35,35 @@ export function DayListPanel({
   // The trip's own price, else the national average (null until it loads).
   const nationalAverage = useNationalAverage()
   const gasPrice = effectiveGasPrice(trip.gas_price_per_gallon, nationalAverage)
+  const gasPriceKnown = gasPrice !== null
+  const mpg = Number(trip.mpg)
 
+  const dayInputs = useMemo(() => days.map(toDayInput), [days])
+  const stopInputs = useMemo(() => stops.map(toStopInput), [stops])
+  // The legs the trip needs, before any routes are known.
+  const neededLegs = useMemo(
+    () =>
+      summarizeTrip(dayInputs, stopInputs, {
+        mpg,
+        gasPricePerGallon: gasPrice ?? 0,
+        route: () => undefined,
+      }).legs,
+    [dayInputs, stopInputs, mpg, gasPrice],
+  )
+  const route = useRoutes(neededLegs)
   const summary = useMemo(
     () =>
-      summarizeTrip(days.map(toDayInput), stops.map(toStopInput), {
-        mpg: Number(trip.mpg),
+      summarizeTrip(dayInputs, stopInputs, {
+        mpg,
         gasPricePerGallon: gasPrice ?? 0,
-        route: noRoutes,
+        route,
       }),
-    [days, stops, trip.mpg, gasPrice],
+    [dayInputs, stopInputs, mpg, gasPrice, route],
+  )
+  // Each leg is shown above the stop it arrives at.
+  const legsByArrival = useMemo(
+    () => new Map(summary.legs.map((leg) => [leg.to.id, leg])),
+    [summary.legs],
   )
   const daysById = useMemo(() => new Map(days.map((d) => [d.id, d])), [days])
   const stopsById = useMemo(() => new Map(stops.map((s) => [s.id, s])), [stops])
@@ -59,21 +77,25 @@ export function DayListPanel({
   }
 
   return (
-    <ol className="day-list">
-      {summary.days.map((day) => (
-        <DayCard
-          key={day.dayId}
-          summary={day}
-          notes={daysById.get(day.dayId)?.notes ?? null}
-          date={dayDate(trip.start_date, day.dayNumber)}
-          stopsById={stopsById}
-          gasPriceKnown={gasPrice !== null}
-          selection={selection}
-          onSelectStop={onSelectStop}
-          onAddStop={onAddStop}
-        />
-      ))}
-    </ol>
+    <>
+      <TripTotalsBar totals={summary.totals} gasPriceKnown={gasPriceKnown} />
+      <ol className="day-list">
+        {summary.days.map((day) => (
+          <DayCard
+            key={day.dayId}
+            summary={day}
+            notes={daysById.get(day.dayId)?.notes ?? null}
+            date={dayDate(trip.start_date, day.dayNumber)}
+            stopsById={stopsById}
+            legsByArrival={legsByArrival}
+            gasPriceKnown={gasPriceKnown}
+            selection={selection}
+            onSelectStop={onSelectStop}
+            onAddStop={onAddStop}
+          />
+        ))}
+      </ol>
+    </>
   )
 }
 
@@ -82,6 +104,7 @@ function DayCard({
   notes,
   date,
   stopsById,
+  legsByArrival,
   gasPriceKnown,
   selection,
   onSelectStop,
@@ -91,12 +114,12 @@ function DayCard({
   notes: string | null
   date: string | null
   stopsById: Map<string, Stop>
+  legsByArrival: Map<string, Leg>
   gasPriceKnown: boolean
   selection: StopSelection | null
   onSelectStop: (stopId: string) => void
   onAddStop?: (day: { dayId: string; dayNumber: number }) => void
 }) {
-  const totals = formatTotals(summary, { gasPriceKnown })
   const headingId = `day-${summary.dayId}`
 
   return (
@@ -121,19 +144,27 @@ function DayCard({
         <ol className="stop-list">
           {summary.stops.map((input) => {
             const stop = stopsById.get(input.id)
+            const leg = legsByArrival.get(input.id)
             const selected = selection?.stopId === input.id
             return (
               stop && (
-                <StopItem
-                  key={stop.id}
-                  stop={stop}
-                  selected={selected}
-                  // Scroll to stops picked on the map, not ones clicked here.
-                  scrollTo={
-                    selected && selection.source === 'map' ? selection : null
-                  }
-                  onSelect={onSelectStop}
-                />
+                <Fragment key={stop.id}>
+                  {leg && (
+                    <LegItem
+                      leg={leg}
+                      fromName={stopsById.get(leg.from.id)?.name ?? ''}
+                    />
+                  )}
+                  <StopItem
+                    stop={stop}
+                    selected={selected}
+                    // Scroll to stops picked on the map, not ones clicked here.
+                    scrollTo={
+                      selected && selection.source === 'map' ? selection : null
+                    }
+                    onSelect={onSelectStop}
+                  />
+                </Fragment>
               )
             )
           })}
@@ -152,26 +183,11 @@ function DayCard({
         </button>
       )}
 
-      <dl className="day-totals">
-        <div>
-          <dt>Driving</dt>
-          <dd>
-            {totals.distance} · {totals.duration}
-          </dd>
-        </div>
-        <div>
-          <dt>Gas</dt>
-          <dd>{totals.gas}</dd>
-        </div>
-        <div>
-          <dt>Other</dt>
-          <dd>{totals.other}</dd>
-        </div>
-        <div>
-          <dt>Total</dt>
-          <dd>{totals.total}</dd>
-        </div>
-      </dl>
+      <TotalsList
+        totals={summary}
+        gasPriceKnown={gasPriceKnown}
+        className="day-totals"
+      />
     </li>
   )
 }

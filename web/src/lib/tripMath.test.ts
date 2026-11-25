@@ -154,7 +154,28 @@ describe('summarizeTrip', () => {
       route: () => undefined,
     })
     expect(summary.totals.pendingLegs).toBe(1)
+    expect(summary.totals.failedLegs).toBe(0)
     expect(summary.totals.drivingMiles).toBe(0)
+    expect(summary.legs[0].status).toBe('pending')
+  })
+
+  it('counts legs with no route as failed and leaves them out of totals', () => {
+    const days = [{ id: 'd1', position: 'a0' }]
+    const stops = [
+      stop('home', 'd1', 'a0', { kind: 'start', lat: 1 }),
+      stop('island', 'd1', 'a1', { lat: 2 }),
+      stop('dest', 'd1', 'a2', { kind: 'end', lat: 3 }),
+    ]
+    const summary = summarizeTrip(days, stops, {
+      ...options,
+      route: (from) => (from.id === 'home' ? null : route()),
+    })
+    expect(summary.legs.map((l) => l.status)).toEqual(['failed', 'ok'])
+    expect(summary.legs[0].route).toBeUndefined()
+    expect(summary.totals.failedLegs).toBe(1)
+    expect(summary.totals.pendingLegs).toBe(0)
+    expect(summary.totals.drivingMiles).toBeCloseTo(100)
+    expect(summary.totals.gasCost).toBeCloseTo(16)
   })
 
   it('files uncategorized costs under other', () => {

@@ -21,11 +21,17 @@ export type StopInput = {
 
 export type RouteInfo = { distanceM: number; durationS: number }
 
-/** Looks up a cached route between two stops; undefined if not fetched yet. */
+/**
+ * Looks up a route between two stops: undefined if it hasn't been fetched
+ * yet, null if routing found no route for it.
+ */
 export type RouteLookup = (
   from: StopInput,
   to: StopInput,
-) => RouteInfo | undefined
+) => RouteInfo | null | undefined
+
+/** ok: route known; pending: not fetched yet; failed: no route found. */
+export type LegStatus = 'ok' | 'pending' | 'failed'
 
 export type Leg = {
   from: StopInput
@@ -33,6 +39,7 @@ export type Leg = {
   /** The day this leg counts toward: the day of the stop it arrives at. */
   dayId: string
   route: RouteInfo | undefined
+  status: LegStatus
   miles: number
   gasCost: number
 }
@@ -48,6 +55,8 @@ export type Totals = {
   totalCost: number
   /** Legs whose route hasn't been fetched yet (totals are incomplete). */
   pendingLegs: number
+  /** Legs with no route; left out of the driving totals. */
+  failedLegs: number
 }
 
 export type DaySummary = Totals & {
@@ -78,14 +87,14 @@ function emptyTotals(): Totals {
     stopCosts: 0,
     totalCost: 0,
     pendingLegs: 0,
+    failedLegs: 0,
   }
 }
 
 function addLeg(totals: Totals, leg: Leg) {
-  if (!leg.route) {
-    totals.pendingLegs += 1
-    return
-  }
+  if (leg.status === 'pending') totals.pendingLegs += 1
+  if (leg.status === 'failed') totals.failedLegs += 1
+  if (!leg.route) return
   totals.drivingMiles += leg.miles
   totals.drivingSeconds += leg.route.durationS
   totals.gasCost += leg.gasCost
@@ -107,6 +116,7 @@ function addTotals(into: Totals, from: Totals) {
   into.stopCosts += from.stopCosts
   into.totalCost += from.totalCost
   into.pendingLegs += from.pendingLegs
+  into.failedLegs += from.failedLegs
   for (const key of Object.keys(into.costsByCategory) as CostCategory[]) {
     into.costsByCategory[key] += from.costsByCategory[key]
   }
@@ -167,13 +177,15 @@ export function summarizeTrip(
       addStopCost(summary, stop)
       if (stop.skipped) continue
       if (previous) {
-        const route = options.route(previous, stop)
+        const found = options.route(previous, stop)
+        const route = found ?? undefined
         const miles = route ? route.distanceM / METERS_PER_MILE : 0
         const leg: Leg = {
           from: previous,
           to: stop,
           dayId: stop.dayId,
           route,
+          status: route ? 'ok' : found === null ? 'failed' : 'pending',
           miles,
           gasCost: gasCost(miles, options.mpg, options.gasPricePerGallon),
         }
