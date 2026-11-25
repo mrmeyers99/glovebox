@@ -449,6 +449,16 @@
     },
   },
 
+  // Edge Functions. Each one turns off the gateway's JWT check and verifies the caller itself with
+  // requireUser() from functions/_shared/auth.ts, which works with the publishable/secret API keys
+  // and asymmetric JWT signing keys. All functions share one import map.
+  "functions": {
+    "health": {
+      "verify_jwt": false,
+      "import_map": "./functions/deno.json",
+    },
+  },
+
   "edge_runtime": {
     "enabled": true,
     // Supported request policies: `oneshot`, `per_worker`.
