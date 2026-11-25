@@ -244,6 +244,17 @@ button:disabled {
   text-align: center;
 }
 
+.map-panel {
+  position: relative;
+  height: 100%;
+}
+
+.map-loading {
+  margin: 0;
+  padding: 1rem;
+  color: var(--muted);
+}
+
 .dialog {
   width: min(28rem, calc(100vw - 2rem));
   padding: 1.25rem;

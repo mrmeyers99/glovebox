@@ -11,8 +11,17 @@ type View = 'list' | 'map'
 
 export function TripPage() {
   const { tripId } = useParams()
-  const { trip, role, canEdit, loading, error, notFound, reload, dispatch } =
-    useTrip(tripId)
+  const {
+    trip,
+    role,
+    stops,
+    canEdit,
+    loading,
+    error,
+    notFound,
+    reload,
+    dispatch,
+  } = useTrip(tripId)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   // Which panel shows at phone width; desktop shows both.
@@ -83,7 +92,7 @@ export function TripPage() {
         className="trip-panel trip-panel-map"
         aria-label="Map"
       >
-        <MapPanel />
+        <MapPanel stops={stops} />
       </section>
 
       {settingsOpen && (
