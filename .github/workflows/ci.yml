@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # diff coverage compares against the base branch
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -23,7 +25,11 @@ jobs:
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm run test
+      - run: npm run test:coverage
+      - name: Diff coverage (changed lines must be 90%+ covered)
+        if: github.event_name == 'pull_request'
+        working-directory: web
+        run: pipx run diff-cover==11.0.4 coverage/lcov.info --compare-branch=origin/${{ github.base_ref }} --fail-under=90
       - run: npm run build
 
   functions:
@@ -34,12 +40,18 @@ jobs:
         working-directory: supabase/functions
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # diff coverage compares against the base branch
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
       - run: deno check .
       - run: deno lint
-      - run: deno test --allow-env
+      - run: deno test --allow-env --coverage=coverage
+      - run: deno coverage coverage --lcov --output=coverage.lcov
+      - name: Diff coverage (changed lines must be 90%+ covered)
+        if: github.event_name == 'pull_request'
+        run: pipx run diff-cover==11.0.4 coverage.lcov --compare-branch=origin/${{ github.base_ref }} --fail-under=90
 
   database:
     name: Migrations and permission tests

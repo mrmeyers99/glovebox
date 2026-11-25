@@ -57,6 +57,8 @@ import {
   type Placement,
 } from './moveStops'
 import { LegItem, TotalsList, TripTotalsBar } from './RouteTotals'
+import { EditingBadges } from './PresenceAvatars'
+import { presenceOutline, type Peer, type PresenceIndex } from './presence'
 import { missingTripEnds, type TripEndKind } from './tripEnds'
 
 /** Opens the form to set the trip's start or end, or change `stop`. */
@@ -136,6 +138,7 @@ export function DayListPanel({
   onAddStop,
   onMoveStop,
   onSetTripEnd,
+  presence,
 }: {
   trip: Trip
   days: Day[]
@@ -155,6 +158,8 @@ export function DayListPanel({
    * Change button on them; pass only for owners and editors.
    */
   onSetTripEnd?: SetTripEnd
+  /** Who else is editing which stop or day, from usePresence. */
+  presence?: PresenceIndex
 }) {
   // Each leg is shown above the stop it arrives at.
   const legsByArrival = useMemo(
@@ -320,6 +325,8 @@ export function DayListPanel({
               promptEnd={
                 i === summary.days.length - 1 && missingEnds.has('end')
               }
+              editors={presence?.days.get(day.dayId)}
+              stopEditors={presence?.stops}
             />
           ))}
         </ol>
@@ -375,6 +382,8 @@ function DayCard({
   onSetTripEnd,
   promptStart,
   promptEnd,
+  editors,
+  stopEditors,
 }: {
   summary: DaySummary
   notes: string | null
@@ -395,6 +404,10 @@ function DayCard({
   promptStart: boolean
   /** This is the last day and the trip has no end. */
   promptEnd: boolean
+  /** Others adding a stop to this day. */
+  editors?: Peer[]
+  /** Others editing stops, by stop id. */
+  stopEditors?: Map<string, Peer[]>
 }) {
   const headingId = `day-${summary.dayId}`
   // The whole card is a drop zone, so stops can land on a rest day.
@@ -410,6 +423,8 @@ function DayCard({
       className="day-card"
       aria-labelledby={headingId}
       data-drop-target={dropTarget ? true : undefined}
+      data-presence={editors?.length ? true : undefined}
+      style={presenceOutline(editors)}
     >
       <header className="day-header">
         <h2 id={headingId}>
@@ -422,6 +437,9 @@ function DayCard({
           Day {summary.dayNumber}
         </h2>
         {date && <time dateTime={date}>{formatDayDate(date)}</time>}
+        {editors?.length ? (
+          <EditingBadges peers={editors} verb="adding a stop" />
+        ) : null}
       </header>
       {notes && <p className="day-notes">{notes}</p>}
 
@@ -444,6 +462,7 @@ function DayCard({
           onSelectStop={onSelectStop}
           canMove={canMove}
           onSetTripEnd={onSetTripEnd}
+          stopEditors={stopEditors}
         />
       )}
 
@@ -508,6 +527,7 @@ function StopList({
   onSelectStop,
   canMove,
   onSetTripEnd,
+  stopEditors,
 }: {
   dayId: string
   /** The day's stops in display order. */
@@ -520,6 +540,7 @@ function StopList({
   onSelectStop: (stopId: string) => void
   canMove: boolean
   onSetTripEnd?: SetTripEnd
+  stopEditors?: Map<string, Peer[]>
 }) {
   const stopIds = useMemo(() => stops.map((s) => s.id), [stops])
 
@@ -554,6 +575,7 @@ function StopList({
             Change
           </button>
         ) : undefined,
+      editors: stopEditors?.get(stop.id),
     }
     return (
       <Fragment key={stop.id}>
@@ -591,6 +613,8 @@ type StopItemProps = {
   onSelect: (stopId: string) => void
   /** A button shown after the stop's name, e.g. to change it. */
   action?: ReactNode
+  /** Others with this stop's edit form open. */
+  editors?: Peer[]
 }
 
 function SortableStopItem({
@@ -675,6 +699,7 @@ function StopItem({
   scrollTo,
   dropSide,
   onSelect,
+  editors,
   nodeRef,
   style,
   placeholder,
@@ -710,7 +735,7 @@ function StopItem({
     <li
       ref={setRef}
       className="stop"
-      style={style}
+      style={{ ...style, ...presenceOutline(editors) }}
       data-kind={stop.kind}
       data-skipped={stop.skipped || undefined}
       data-selected={selected || undefined}
@@ -718,6 +743,7 @@ function StopItem({
       data-dragging={dragging || undefined}
       data-drop={dropSide}
       data-sortable={handle ? true : undefined}
+      data-presence={editors?.length ? true : undefined}
       // The whole row is clickable; the name is a button for keyboard users.
       onClick={() => onSelect(stop.id)}
     >
@@ -731,6 +757,9 @@ function StopItem({
             )}
             {stop.name}
           </button>
+          {editors?.length ? (
+            <EditingBadges peers={editors} verb="editing" />
+          ) : null}
           {stop.arrival_time && (
             <time className="stop-arrival" dateTime={stop.arrival_time}>
               {formatTimeOfDay(stop.arrival_time)}

@@ -6,12 +6,15 @@ import { DayListPanel } from './DayListPanel'
 import { defaultDropDay } from './mapAdd'
 import { MapPanel } from './MapPanel'
 import type { StopSelection } from './mapView'
+import { PresenceAvatars } from './PresenceAvatars'
+import { editingFocus } from './presence'
 import { ShareDialog } from './ShareDialog'
 import { StopDialog, type StopDialogMode } from './StopDialog'
 import { TripEndDialog } from './TripEndDialog'
 import type { TripEndKind } from './tripEnds'
 import { TripSettingsDialog } from './TripSettingsDialog'
 import { useMoveStop } from './useMoveStop'
+import { usePresence } from './usePresence'
 import { useTrip } from './useTrip'
 import { useTripSummary } from './useTripSummary'
 
@@ -82,6 +85,10 @@ export function TripPage() {
     const day = summary.days.find((d) => d.dayId === stop?.day_id)
     return stop && day ? { type: 'edit', stop, dayNumber: day.dayNumber } : null
   }, [stopDialog, stops, summary.days])
+  const presence = usePresence(
+    trip ? tripId : undefined,
+    editingFocus(canEdit, stopDialogMode, tripEnd?.stop?.id),
+  )
   const selectFromMap = useCallback(
     (stopId: string) => setSelection({ stopId, source: 'map' }),
     [],
@@ -121,6 +128,7 @@ export function TripPage() {
           <h1>{trip.name}</h1>
           <TripSummary trip={trip} />
         </div>
+        <PresenceAvatars peers={presence.peers} />
         <button type="button" onClick={() => setShareOpen(true)}>
           Share
         </button>
@@ -164,6 +172,7 @@ export function TripPage() {
           onAddStop={canEdit ? openAddStop : undefined}
           onMoveStop={canEdit ? moveStop.move : undefined}
           onSetTripEnd={canEdit ? openTripEnd : undefined}
+          presence={presence.index}
         />
       </section>
       <section
