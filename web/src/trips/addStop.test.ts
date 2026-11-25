@@ -4,6 +4,7 @@ import type { Place } from '../lib/geocode'
 import { comparePositions } from '../lib/tripMath'
 import {
   canDeleteStop,
+  changedStopFields,
   emptyStopForm,
   formatStay,
   nameAfterPick,
@@ -422,5 +423,54 @@ describe('canDeleteStop', () => {
     expect(canDeleteStop({ kind: 'waypoint' })).toBe(true)
     expect(canDeleteStop({ kind: 'start' })).toBe(false)
     expect(canDeleteStop({ kind: 'end' })).toBe(false)
+  })
+})
+
+describe('changedStopFields', () => {
+  const stop = makeStop('s1', 'd1', 'a0', {
+    name: 'Red Cliffs Lodge',
+    address: 'Moab, UT, USA',
+    lat: 38.7,
+    lng: -109.4,
+    notes: 'Conf #ABC123',
+    cost_amount: 250,
+    cost_category: 'lodging',
+    arrival_time: '15:30:45',
+    stay_minutes: 90,
+  })
+  const save = (patch: Partial<StopFormInput>, place = placeFromStop(stop)) => {
+    const result = parseStopForm({ ...stopFormFromStop(stop), ...patch }, place)
+    if (!result.ok) throw new Error('invalid form')
+    return changedStopFields(stop, result.fields)
+  }
+
+  it('is empty when nothing changed, keeping stored seconds', () => {
+    expect(save({})).toEqual({})
+  })
+
+  it('sends only the edited fields', () => {
+    expect(save({ notes: 'Conf #XYZ', stay: '2h' })).toEqual({
+      notes: 'Conf #XYZ',
+      stay_minutes: 120,
+    })
+  })
+
+  it('sends the cost amount and category together', () => {
+    expect(save({ costAmount: '300' })).toEqual({
+      cost_amount: 300,
+      cost_category: 'lodging',
+    })
+    expect(save({ costAmount: '' })).toEqual({
+      cost_amount: null,
+      cost_category: null,
+    })
+  })
+
+  it('sends the whole place when it changes', () => {
+    expect(save({}, { ...moab, address: 'Moab, UT, USA' })).toEqual({
+      address: 'Moab, UT, USA',
+      lat: moab.lat,
+      lng: moab.lng,
+    })
   })
 })

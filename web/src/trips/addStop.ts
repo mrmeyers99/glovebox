@@ -199,6 +199,38 @@ export function placeFromStop(stop: Stop): Place {
   }
 }
 
+/**
+ * The fields an edit actually changes, compared with the form as it was
+ * opened on `original`, so saving doesn't overwrite fields a collaborator
+ * changed meanwhile. The place (address and coordinates) and the cost
+ * (amount and category) are each sent together, as they only make sense
+ * as a pair.
+ */
+export function changedStopFields(
+  original: Stop,
+  fields: StopFields,
+): Partial<StopFields> {
+  const before = parseStopForm(
+    stopFormFromStop(original),
+    placeFromStop(original),
+  )
+  // A saved row the form can't represent: send everything.
+  if (!before.ok) return fields
+  const keys = (Object.keys(fields) as (keyof StopFields)[]).filter(
+    (key) => fields[key] !== before.fields[key],
+  )
+  const groups: (keyof StopFields)[][] = [
+    ['address', 'lat', 'lng'],
+    ['cost_amount', 'cost_category'],
+  ]
+  for (const group of groups) {
+    if (group.some((key) => keys.includes(key))) keys.push(...group)
+  }
+  return Object.fromEntries(
+    keys.map((key) => [key, fields[key]]),
+  ) as Partial<StopFields>
+}
+
 /** Start and end stops can only be changed, not deleted. */
 export function canDeleteStop(stop: Pick<Stop, 'kind'>): boolean {
   return stop.kind === 'waypoint'

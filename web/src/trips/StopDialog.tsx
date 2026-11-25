@@ -14,6 +14,7 @@ import type { Place } from '../lib/geocode'
 import { supabase } from '../lib/supabase'
 import {
   canDeleteStop,
+  changedStopFields,
   COST_CATEGORIES,
   emptyStopForm,
   formatStay,
@@ -86,6 +87,8 @@ export function StopDialog(props: Props) {
 
 function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
   const editing = mode.type === 'edit' ? mode.stop : null
+  // The stop as it was when opened; saving sends only what changed since.
+  const [original] = useState(editing)
   const dayId = mode.type === 'add' ? mode.dayId : mode.stop.day_id
   const [query, setQuery] = useState('')
   const [place, setPlace] = useState<Place | null>(() =>
@@ -150,7 +153,7 @@ function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
       .single()
   }
 
-  function updateStop(id: string, fields: StopFields) {
+  function updateStop(id: string, fields: Partial<StopFields>) {
     return supabase.from('stops').update(fields).eq('id', id).select().single()
   }
 
@@ -161,14 +164,23 @@ function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
       setErrors(result.errors)
       return
     }
+    const changes = original
+      ? changedStopFields(original, result.fields)
+      : result.fields
+    if (original && Object.keys(changes).length === 0) {
+      onClose()
+      return
+    }
     setSaving(true)
     setSaveError(null)
-    const { data, error } = editing
-      ? await updateStop(editing.id, result.fields)
+    const { data, error } = original
+      ? await updateStop(original.id, changes)
       : await insert(result.fields)
     setSaving(false)
     if (error) {
-      setSaveError(error.message)
+      setSaveError(
+        `${original ? "Couldn't save the stop" : "Couldn't add the stop"}: ${error.message}`,
+      )
       return
     }
     dispatch({ type: 'upsertStop', stop: data })
@@ -187,7 +199,9 @@ function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
     setSaving(false)
     if (error || data.length === 0) {
       // No rows means row-level security hid it: no longer allowed to edit.
-      setSaveError(error?.message ?? "You can't delete stops on this trip.")
+      setSaveError(
+        `Couldn't delete the stop: ${error?.message ?? "you can't change this trip."}`,
+      )
       setConfirmingDelete(false)
       return
     }
@@ -325,7 +339,6 @@ function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
 
       {saveError && (
         <p role="alert" className="error">
-          {editing ? "Couldn't save the stop" : "Couldn't add the stop"}:{' '}
           {saveError}
         </p>
       )}
