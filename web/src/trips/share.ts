@@ -1,5 +1,6 @@
-// Share dialog: who's on a trip, pending invites, and the invite form.
-// The rules mirror the trip_invites checks so mistakes are caught before saving.
+// Share dialog: who's on a trip, pending invites, the invite form, and
+// managing members. The rules mirror the trip_members and trip_invites
+// policies so the dialog only offers actions the database allows.
 
 import type {
   Profile,
@@ -44,12 +45,55 @@ export function memberRows(
       role: m.role,
       isYou: m.user_id === currentUserId,
     }))
-    .sort(
-      (a, b) =>
-        ROLE_ORDER[a.role] - ROLE_ORDER[b.role] ||
-        a.name.localeCompare(b.name) ||
-        (a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0),
-    )
+    .sort(compareMembers)
+}
+
+function compareMembers(a: MemberRow, b: MemberRow) {
+  return (
+    ROLE_ORDER[a.role] - ROLE_ORDER[b.role] ||
+    a.name.localeCompare(b.name) ||
+    (a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0)
+  )
+}
+
+export type MemberAction = 'changeRole' | 'remove' | 'leave'
+
+/**
+ * What the signed-in user (with `viewerRole`) can do to a member's row. The
+ * owner changes roles and removes anyone but themself; everyone else can only
+ * leave. The owner's row has no actions (ownership transfer isn't supported).
+ */
+export function memberActions(
+  member: MemberRow,
+  viewerRole: TripRole,
+): MemberAction[] {
+  if (member.role === 'owner') return []
+  if (viewerRole === 'owner') return ['changeRole', 'remove']
+  return member.isYou ? ['leave'] : []
+}
+
+/** The list after a member's role changed, re-sorted. */
+export function withMemberRole(
+  rows: MemberRow[],
+  userId: string,
+  role: InviteRole,
+): MemberRow[] {
+  return rows
+    .map((m) => (m.userId === userId ? { ...m, role } : m))
+    .sort(compareMembers)
+}
+
+/** The list without a member who was removed. */
+export function withoutMember(rows: MemberRow[], userId: string): MemberRow[] {
+  return rows.filter((m) => m.userId !== userId)
+}
+
+export function removeMemberPrompt(name: string) {
+  return `Remove ${name} from this trip? They'll lose access right away.`
+}
+
+export function leaveTripPrompt(tripName: string) {
+  return `Leave "${tripName}"? You'll need a new invite to rejoin.`
 }
 
 /** Invites nobody has accepted yet, oldest first. */
