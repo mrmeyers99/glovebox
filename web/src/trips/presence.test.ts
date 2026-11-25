@@ -154,6 +154,11 @@ describe('editingFocus', () => {
     expect(editingFocus(true, add, 's2')).toEqual({ stopId: 's2' })
   })
 
+  it("isn't set while only confirming a deletion", () => {
+    const del = { type: 'delete' as const, stop: { id: 's1' } }
+    expect(editingFocus(true, del, undefined)).toBeNull()
+  })
+
   it('is never set for viewers', () => {
     expect(editingFocus(false, edit, 's2')).toBeNull()
   })

@@ -62,7 +62,7 @@ export function presenceColorVar(color: number) {
 export function editingFocus(
   canEdit: boolean,
   stopDialog:
-    | { type: 'edit'; stop: { id: string } }
+    | { type: 'edit' | 'delete'; stop: { id: string } }
     | { type: 'add'; dayId: string }
     | null,
   tripEndStopId: string | undefined,

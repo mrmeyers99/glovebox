@@ -3,6 +3,8 @@
 // another day, or drop them on the "+ Day N+1" zone to start a new day, and
 // set or change the trip's start and end. Whichever stop ends up first on
 // Day 1 is the start, and last on the last day the end.
+// Each stop has a menu (StopMenu), opened from its "⋯" button, a
+// right-click or a long-press.
 
 import {
   DndContext,
@@ -57,12 +59,17 @@ import {
   type Placement,
 } from './moveStops'
 import { LegItem, TotalsList, TripTotalsBar } from './RouteTotals'
+import type { MenuAnchor } from './stopMenu'
 import { EditingBadges } from './PresenceAvatars'
 import { presenceOutline, type Peer, type PresenceIndex } from './presence'
 import { missingTripEnds, type TripEndKind } from './tripEnds'
+import { useStopMenuTrigger } from './useStopMenuTrigger'
 
 /** Opens the form to set the trip's start or end, or change `stop`. */
 export type SetTripEnd = (kind: TripEndKind, stop?: Stop) => void
+
+/** Opens stop `stopId`'s menu at `anchor`. */
+export type OpenStopMenu = (stopId: string, anchor: MenuAnchor) => void
 
 /** What each draggable stop and drop zone is, on its dnd-kit `data`. */
 type DragData =
@@ -138,6 +145,8 @@ export function DayListPanel({
   onAddStop,
   onMoveStop,
   onSetTripEnd,
+  menuStopId,
+  onOpenStopMenu,
   presence,
 }: {
   trip: Trip
@@ -158,6 +167,10 @@ export function DayListPanel({
    * Change button on them; pass only for owners and editors.
    */
   onSetTripEnd?: SetTripEnd
+  /** The stop whose menu is open, if any. */
+  menuStopId?: string | null
+  /** Gives each stop a menu (see StopMenu). */
+  onOpenStopMenu?: OpenStopMenu
   /** Who else is editing which stop or day, from usePresence. */
   presence?: PresenceIndex
 }) {
@@ -321,6 +334,8 @@ export function DayListPanel({
               onAddStop={onAddStop}
               canMove={onMoveStop !== undefined}
               onSetTripEnd={onSetTripEnd}
+              menuStopId={menuStopId}
+              onOpenStopMenu={onOpenStopMenu}
               promptStart={i === 0 && missingEnds.has('start')}
               promptEnd={
                 i === summary.days.length - 1 && missingEnds.has('end')
@@ -380,6 +395,8 @@ function DayCard({
   onAddStop,
   canMove,
   onSetTripEnd,
+  menuStopId,
+  onOpenStopMenu,
   promptStart,
   promptEnd,
   editors,
@@ -400,6 +417,8 @@ function DayCard({
   onAddStop?: (day: { dayId: string; dayNumber: number }) => void
   canMove: boolean
   onSetTripEnd?: SetTripEnd
+  menuStopId?: string | null
+  onOpenStopMenu?: OpenStopMenu
   /** This is the first day and the trip has no start. */
   promptStart: boolean
   /** This is the last day and the trip has no end. */
@@ -462,6 +481,8 @@ function DayCard({
           onSelectStop={onSelectStop}
           canMove={canMove}
           onSetTripEnd={onSetTripEnd}
+          menuStopId={menuStopId}
+          onOpenStopMenu={onOpenStopMenu}
           stopEditors={stopEditors}
         />
       )}
@@ -527,6 +548,8 @@ function StopList({
   onSelectStop,
   canMove,
   onSetTripEnd,
+  menuStopId,
+  onOpenStopMenu,
   stopEditors,
 }: {
   dayId: string
@@ -540,6 +563,8 @@ function StopList({
   onSelectStop: (stopId: string) => void
   canMove: boolean
   onSetTripEnd?: SetTripEnd
+  menuStopId?: string | null
+  onOpenStopMenu?: OpenStopMenu
   stopEditors?: Map<string, Peer[]>
 }) {
   const stopIds = useMemo(() => stops.map((s) => s.id), [stops])
@@ -560,6 +585,8 @@ function StopList({
             : ('before' as const)
           : undefined,
       onSelect: onSelectStop,
+      menuOpen: menuStopId === stop.id,
+      onOpenMenu: onOpenStopMenu,
       action:
         onSetTripEnd && endKind ? (
           <button
@@ -611,6 +638,10 @@ type StopItemProps = {
   /** Where a stop dragged from another day would land, next to this one. */
   dropSide?: 'before' | 'after'
   onSelect: (stopId: string) => void
+  /** This stop's menu is open. */
+  menuOpen?: boolean
+  /** Gives the stop a "⋯" menu button, right-click and long-press menu. */
+  onOpenMenu?: OpenStopMenu
   /** A button shown after the stop's name, e.g. to change it. */
   action?: ReactNode
   /** Others with this stop's edit form open. */
@@ -699,6 +730,8 @@ function StopItem({
   scrollTo,
   dropSide,
   onSelect,
+  menuOpen,
+  onOpenMenu,
   editors,
   nodeRef,
   style,
@@ -731,6 +764,18 @@ function StopItem({
     if (scrollTo) ref.current?.scrollIntoView({ block: 'nearest' })
   }, [scrollTo])
 
+  const menuButton = useRef<HTMLButtonElement>(null)
+  const openMenu = useMemo(
+    () => onOpenMenu && ((anchor: MenuAnchor) => onOpenMenu(stop.id, anchor)),
+    [onOpenMenu, stop.id],
+  )
+  const menuButtonNode = useCallback(() => menuButton.current, [])
+  const menuTrigger = useStopMenuTrigger(openMenu, {
+    returnFocus: menuButtonNode,
+    // A long-press on the handle starts a drag instead.
+    ignoreSelector: '.stop-handle',
+  })
+
   return (
     <li
       ref={setRef}
@@ -743,9 +788,11 @@ function StopItem({
       data-dragging={dragging || undefined}
       data-drop={dropSide}
       data-sortable={handle ? true : undefined}
+      data-menu-open={menuOpen || undefined}
       data-presence={editors?.length ? true : undefined}
       // The whole row is clickable; the name is a button for keyboard users.
       onClick={() => onSelect(stop.id)}
+      {...(openMenu ? menuTrigger : {})}
     >
       {handle}
       <div className="stop-body">
@@ -766,6 +813,28 @@ function StopItem({
             </time>
           )}
           {action}
+          {openMenu && (
+            <button
+              type="button"
+              ref={menuButton}
+              className="stop-menu-button"
+              aria-label={`Actions for ${stop.name}`}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen ?? false}
+              // Opening the menu shouldn't also select the stop.
+              onClick={(e) => {
+                e.stopPropagation()
+                const rect = e.currentTarget.getBoundingClientRect()
+                openMenu({
+                  x: rect.left,
+                  y: rect.bottom,
+                  returnFocus: e.currentTarget,
+                })
+              }}
+            >
+              ⋯
+            </button>
+          )}
         </div>
         {stop.address && <p className="stop-address">{stop.address}</p>}
         {/* Skipped stops don't count toward the totals, so don't show a cost. */}

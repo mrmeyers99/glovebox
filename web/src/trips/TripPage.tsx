@@ -13,6 +13,9 @@ import { StopDialog, type StopDialogMode } from './StopDialog'
 import { TripEndDialog } from './TripEndDialog'
 import type { TripEndKind } from './tripEnds'
 import { TripSettingsDialog } from './TripSettingsDialog'
+import { dropPlacement } from './moveStops'
+import { StopMenu } from './StopMenu'
+import type { MenuAnchor } from './stopMenu'
 import { useMoveStop } from './useMoveStop'
 import { usePresence } from './usePresence'
 import { useTrip } from './useTrip'
@@ -34,7 +37,7 @@ export function TripPage() {
     reload,
     dispatch,
   } = useTrip(tripId)
-  const moveStop = useMoveStop(dispatch, days, stops)
+  const stopUpdates = useMoveStop(dispatch, days, stops)
   // Called before the early return below (hooks can't be conditional).
   const { summary, gasPriceKnown } = useTripSummary(trip, days, stops)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -43,9 +46,19 @@ export function TripPage() {
   // map), or the id of the stop opened.
   const [stopDialog, setStopDialog] = useState<
     | { type: 'add'; dayId: string; dayNumber: number; at?: LatLng }
-    | { type: 'edit'; stopId: string }
+    | { type: 'edit' | 'delete'; stopId: string }
     | null
   >(null)
+  // The open stop menu, and where it opened.
+  const [stopMenu, setStopMenu] = useState<{
+    stopId: string
+    anchor: MenuAnchor
+  } | null>(null)
+  const openStopMenu = useCallback(
+    (stopId: string, anchor: MenuAnchor) => setStopMenu({ stopId, anchor }),
+    [],
+  )
+  const closeStopMenu = useCallback(() => setStopMenu(null), [])
   // The start or end being set (no stop) or changed.
   const [tripEnd, setTripEnd] = useState<{
     kind: TripEndKind
@@ -80,11 +93,33 @@ export function TripPage() {
   // Resolved on every render so the dialog follows live changes; it closes
   // if the stop is deleted meanwhile.
   const stopDialogMode = useMemo((): StopDialogMode | null => {
-    if (stopDialog?.type !== 'edit') return stopDialog
+    if (stopDialog?.type === 'add' || !stopDialog) return stopDialog
     const stop = stops.find((s) => s.id === stopDialog.stopId)
     const day = summary.days.find((d) => d.dayId === stop?.day_id)
-    return stop && day ? { type: 'edit', stop, dayNumber: day.dayNumber } : null
+    return stop && day
+      ? { type: stopDialog.type, stop, dayNumber: day.dayNumber }
+      : null
   }, [stopDialog, stops, summary.days])
+  // The stop whose menu is open; it closes if the stop is deleted meanwhile.
+  const menuStop = stopMenu
+    ? stops.find((s) => s.id === stopMenu.stopId)
+    : undefined
+  // Forget it too, rather than keep state for a menu that can't show.
+  if (stopMenu && !menuStop && !loading) setStopMenu(null)
+  const menuDays = useMemo(
+    () => summary.days.map(({ dayId, dayNumber }) => ({ dayId, dayNumber })),
+    [summary.days],
+  )
+  // Move to the end of a day (before its end stop) or a new day at the end,
+  // as dropping the stop there does.
+  function moveToDay(stop: Stop, dayId: string | null) {
+    const placement = dropPlacement(
+      (id) => summary.days.find((d) => d.dayId === id)?.stops ?? [],
+      stop,
+      dayId === null ? { type: 'newDay' } : { type: 'day', dayId },
+    )
+    if (placement) void stopUpdates.move(stop, placement)
+  }
   const presence = usePresence(
     trip ? tripId : undefined,
     editingFocus(canEdit, stopDialogMode, tripEnd?.stop?.id),
@@ -153,10 +188,10 @@ export function TripPage() {
         className="trip-panel trip-panel-list"
         aria-label="Days and stops"
       >
-        {moveStop.error && (
+        {stopUpdates.error && (
           <p role="alert" className="error panel-alert">
-            {moveStop.error}{' '}
-            <button type="button" onClick={moveStop.clearError}>
+            {stopUpdates.error}{' '}
+            <button type="button" onClick={stopUpdates.clearError}>
               Dismiss
             </button>
           </p>
@@ -170,8 +205,10 @@ export function TripPage() {
           selection={selection}
           onSelectStop={selectFromList}
           onAddStop={canEdit ? openAddStop : undefined}
-          onMoveStop={canEdit ? moveStop.move : undefined}
+          onMoveStop={canEdit ? stopUpdates.move : undefined}
           onSetTripEnd={canEdit ? openTripEnd : undefined}
+          menuStopId={menuStop?.id ?? null}
+          onOpenStopMenu={openStopMenu}
           presence={presence.index}
         />
       </section>
@@ -197,15 +234,32 @@ export function TripPage() {
           onClose={() => setSettingsOpen(false)}
         />
       )}
+      {stopMenu && menuStop && (
+        <StopMenu
+          stop={menuStop}
+          anchor={stopMenu.anchor}
+          canEdit={canEdit}
+          days={menuDays}
+          onMoveToDay={(dayId) => moveToDay(menuStop, dayId)}
+          onSetSkipped={(skipped) =>
+            void stopUpdates.setSkipped(menuStop, skipped)
+          }
+          onOpen={() => selectFromList(menuStop.id)}
+          onDelete={() =>
+            setStopDialog({ type: 'delete', stopId: menuStop.id })
+          }
+          onClose={closeStopMenu}
+        />
+      )}
       {stopDialogMode && (stopDialogMode.type === 'edit' || canEdit) && (
         <StopDialog
           // A fresh form for each stop opened.
           key={
-            stopDialogMode.type === 'edit'
-              ? stopDialogMode.stop.id
-              : stopDialogMode.at
+            stopDialogMode.type === 'add'
+              ? stopDialogMode.at
                 ? `add:${stopDialogMode.at.lat},${stopDialogMode.at.lng}`
                 : `add:${stopDialogMode.dayId}`
+              : `${stopDialogMode.type}:${stopDialogMode.stop.id}`
           }
           tripId={trip.id}
           mode={stopDialogMode}
