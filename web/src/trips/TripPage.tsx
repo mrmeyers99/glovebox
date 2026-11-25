@@ -7,6 +7,7 @@ import { MapPanel } from './MapPanel'
 import type { StopSelection } from './mapView'
 import { ShareDialog } from './ShareDialog'
 import { TripSettingsDialog } from './TripSettingsDialog'
+import { useReorderStop } from './useReorderStop'
 import { useTrip } from './useTrip'
 
 type View = 'list' | 'map'
@@ -25,6 +26,7 @@ export function TripPage() {
     reload,
     dispatch,
   } = useTrip(tripId)
+  const reorder = useReorderStop(dispatch)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [addStopDay, setAddStopDay] = useState<{
@@ -102,6 +104,14 @@ export function TripPage() {
         className="trip-panel trip-panel-list"
         aria-label="Days and stops"
       >
+        {reorder.error && (
+          <p role="alert" className="error panel-alert">
+            {reorder.error}{' '}
+            <button type="button" onClick={reorder.clearError}>
+              Dismiss
+            </button>
+          </p>
+        )}
         <DayListPanel
           trip={trip}
           days={days}
@@ -109,6 +119,7 @@ export function TripPage() {
           selection={selection}
           onSelectStop={selectFromList}
           onAddStop={canEdit ? setAddStopDay : undefined}
+          onMoveStop={canEdit ? reorder.move : undefined}
         />
       </section>
       <section
