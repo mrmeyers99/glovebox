@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Day, Stop, Trip } from '../lib/database.types'
 import { summarizeTrip } from '../lib/tripMath'
 import { toDayInput, toStopInput } from '../lib/tripRows'
@@ -107,5 +113,64 @@ describe('DayListPanel presence', () => {
     const { container } = renderPanel([], true)
     expect(container.querySelector('[data-presence]')).toBeNull()
     expect(container.querySelector('.presence-editing')).toBeNull()
+  })
+})
+
+describe('DayListPanel start and end', () => {
+  const ends = [
+    { ...stop('start', 'd1', 'a0'), kind: 'start' as const },
+    stop('mid', 'd1', 'a1'),
+    { ...stop('end', 'd2', 'a0'), kind: 'end' as const },
+  ]
+  const endsSummary = summarizeTrip(
+    days.map(toDayInput),
+    ends.map(toStopInput),
+    { mpg: 25, gasPricePerGallon: 3, route: () => undefined },
+  )
+
+  function renderEnds() {
+    const onSetTripEnd = vi.fn()
+    const onSelectStop = vi.fn()
+    render(
+      <DayListPanel
+        trip={trip}
+        days={days}
+        stops={ends}
+        summary={endsSummary}
+        gasPriceKnown
+        selection={null}
+        onSelectStop={onSelectStop}
+        onMoveStop={() => {}}
+        onSetTripEnd={onSetTripEnd}
+      />,
+    )
+    return { onSetTripEnd, onSelectStop }
+  }
+
+  it('lets the start and end be dragged like any stop', () => {
+    renderEnds()
+    for (const name of ['Stop start', 'Stop mid', 'Stop end'])
+      expect(screen.getByRole('button', { name: `Move ${name}` })).toBeTruthy()
+  })
+
+  it('changes the start or end without selecting it', () => {
+    const { onSetTripEnd, onSelectStop } = renderEnds()
+    fireEvent.click(
+      screen.getByRole('button', { name: "Change the trip's end" }),
+    )
+    expect(onSetTripEnd).toHaveBeenCalledExactlyOnceWith('end', ends[2])
+    expect(onSelectStop).not.toHaveBeenCalled()
+  })
+
+  it("announces a picked-up stop's place among all of its day's stops", async () => {
+    renderEnds()
+    const handle = screen.getByRole('button', { name: 'Move Stop start' })
+    handle.focus()
+    fireEvent.keyDown(handle, { code: 'Space' })
+    expect(
+      await screen.findByText(
+        'Picked up Stop start, position 1 of 2 on Day 1.',
+      ),
+    ).toBeTruthy()
   })
 })

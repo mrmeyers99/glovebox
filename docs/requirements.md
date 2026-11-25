@@ -78,7 +78,11 @@ scale to public use later.
 
 - Each stop belongs to exactly one day and has an order within that day.
 - Kinds: **start**, **waypoint**, **end**.
-  - Start is pinned to the top of Day 1; end is pinned to the bottom of the last day.
+  - Start is always the first stop of Day 1; end is always the last stop of the last day.
+  - Start and end can be dragged like any stop. Whichever stop lands first on Day 1 becomes
+    the start and last on the last day the end; the stops that held those roles become
+    waypoints. A move that would leave Day 1 (or the last day) with no stop for the role is
+    refused. Dropping a stop on "+ Day N+1" brings the end along to the new day.
 - Fields:
   - Name
   - Location (picked by place search or tapping the map), address

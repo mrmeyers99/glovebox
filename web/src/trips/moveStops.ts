@@ -1,61 +1,31 @@
-// Moving waypoints by drag and drop: within a day, to another day, or to a
-// new day added after the last one. Works out where a dropped stop goes and
-// saves it with an optimistic update that rolls back on failure.
+// Moving stops by drag and drop: within a day, to another day, or to a new
+// day added after the last one. Any stop can move, start and end included:
+// after a move, the first stop on Day 1 is the trip's start and the last stop
+// on the last day its end, so dragging a stop into or out of those places
+// hands the role over. Works out every row that changes and saves them in one
+// request, with an optimistic update that rolls back on failure.
 
 import type { Dispatch } from 'react'
-import type { Day, Stop } from '../lib/database.types'
-import { positionAtEnd, positionBetween } from '../lib/positions'
+import type { Day, Stop, StopKind } from '../lib/database.types'
+import {
+  positionAtEnd,
+  positionAtStart,
+  positionBetween,
+} from '../lib/positions'
 import { comparePositions } from '../lib/tripMath'
-import { endStopPlacement } from './tripEnds'
+import type { TripEndKind } from './tripEnds'
 import type { TripAction } from './tripState'
 
 type Orderable = Pick<Stop, 'id' | 'kind' | 'position'>
+type Movable = Pick<Stop, 'id' | 'kind' | 'day_id' | 'position'>
 
-/**
- * A key for a stop inserted at `index` in `list` (sorted, without the stop
- * itself).
- */
-function keyAt(list: Orderable[], index: number): string {
-  const before: string | null = list[index - 1]?.position ?? null
-  let after: string | null = list[index]?.position ?? null
-  if (
-    before !== null &&
-    after !== null &&
-    comparePositions(before, after) >= 0
-  ) {
-    // Neighbours share a key (e.g. two stops added at once by different
-    // people), so nothing fits between them. Go just after the run of equal
-    // keys instead; only the moved stop's row is ever written.
-    after =
-      list
-        .slice(index)
-        .map((s) => s.position)
-        .find((p) => comparePositions(p, before) > 0) ?? null
-  }
-  return positionBetween(before, after)
-}
+const rank = (s: Orderable) =>
+  s.kind === 'start' ? 0 : s.kind === 'end' ? 2 : 1
 
-/**
- * The new position key for waypoint `movedId` dropped where waypoint `overId`
- * is, given the day's stops in display order. Only waypoints move: start and
- * end stops always sort first and last whatever their keys, so the new key
- * only has to fit between its neighbouring waypoints.
- *
- * Returns null if nothing moves (dropped in place, or either id isn't a
- * waypoint on this day).
- */
-export function reorderedPosition(
-  dayStops: Orderable[],
-  movedId: string,
-  overId: string,
-): string | null {
-  const waypoints = dayStops.filter((s) => s.kind === 'waypoint')
-  const from = waypoints.findIndex((s) => s.id === movedId)
-  const to = waypoints.findIndex((s) => s.id === overId)
-  if (from === -1 || to === -1 || from === to) return null
-  return keyAt(
-    waypoints.filter((s) => s.id !== movedId),
-    to,
+/** A day's stops in display order: start first, end last, like orderTrip. */
+function displayOrder<S extends Orderable>(stops: S[]): S[] {
+  return [...stops].sort(
+    (a, b) => rank(a) - rank(b) || comparePositions(a.position, b.position),
   )
 }
 
@@ -70,51 +40,214 @@ export type DropTarget =
 
 /** Where a moved stop goes. */
 export type Placement =
-  { type: 'day'; dayId: string; position: string } | { type: 'newDay' }
+  /**
+   * On `dayId`, at `index` among that day's stops in display order (without
+   * the moved stop).
+   */
+  { type: 'day'; dayId: string; index: number } | { type: 'newDay' }
 
 /**
- * Where waypoint `moved` goes when dropped on `target`, or null if nothing
- * moves. `stopsOnDay` gives a day's stops in display order.
+ * Where `moved` goes when dropped on `target`, or null if nothing moves.
+ * `stopsOnDay` gives a day's stops in display order.
  *
  * Within its own day, a drop on a stop takes that stop's place, like the
  * list animates while dragging. On another day, it goes before or after the
- * stop it's dropped on, or at the end of the day (before its end stop).
+ * stop it's dropped on, or at the end of the day (but before the trip's end:
+ * to become the end, drop it on the lower half of the end stop).
  */
 export function dropPlacement(
   stopsOnDay: (dayId: string) => Orderable[],
-  moved: Pick<Stop, 'id' | 'kind' | 'day_id'>,
+  moved: Pick<Stop, 'id' | 'day_id'>,
   target: DropTarget,
 ): Placement | null {
-  if (moved.kind !== 'waypoint') return null
   if (target.type === 'newDay') return { type: 'newDay' }
 
   const dayStops = stopsOnDay(target.dayId)
   if (target.dayId === moved.day_id) {
     if (target.type !== 'stop') return null
-    const position = reorderedPosition(dayStops, moved.id, target.stopId)
-    return position === null
-      ? null
-      : { type: 'day', dayId: target.dayId, position }
+    const from = dayStops.findIndex((s) => s.id === moved.id)
+    const to = dayStops.findIndex((s) => s.id === target.stopId)
+    if (from === -1 || to === -1 || from === to) return null
+    return { type: 'day', dayId: target.dayId, index: to }
   }
 
-  const waypoints = dayStops.filter((s) => s.kind === 'waypoint')
-  let index = waypoints.length
+  const others = dayStops.filter((s) => s.id !== moved.id)
+  let index = others.at(-1)?.kind === 'end' ? others.length - 1 : others.length
   if (target.type === 'stop') {
-    const i = waypoints.findIndex((s) => s.id === target.stopId)
+    const i = others.findIndex((s) => s.id === target.stopId)
     if (i !== -1) index = target.after ? i + 1 : i
   }
-  return { type: 'day', dayId: target.dayId, position: keyAt(waypoints, index) }
+  return { type: 'day', dayId: target.dayId, index }
+}
+
+/** The fields of one stop that a move changes. */
+export type StopChange = {
+  id: string
+  day_id?: string
+  position?: string
+  kind?: StopKind
+}
+
+/** Everything a move changes: maybe a new day, then the stops. */
+export type MovePlan = { newDay: Day | null; changes: StopChange[] }
+
+const ROLE_ERRORS: Record<TripEndKind, string> = {
+  start: "Day 1 needs a stop to be the trip's start.",
+  end: "The last day needs a stop to be the trip's end.",
+}
+
+/**
+ * Work out what moving `moved` to `placement` changes. A drop on the new-day
+ * zone adds a day after the last one (with id `newDayId`) and brings the
+ * trip's end along, so the end stays on the last day.
+ *
+ * Then the first stop on Day 1 becomes the start and the last stop on the
+ * last day the end (for whichever of the two the trip has), and the stops
+ * that held those roles before become waypoints. Returns an error if that
+ * leaves a role without a stop, and null if nothing changes.
+ */
+export function planMove(
+  days: Day[],
+  stops: Stop[],
+  moved: Stop,
+  placement: Placement,
+  newDayId: string,
+): MovePlan | { error: string } | null {
+  let allDays = days
+  let newDay: Day | null = null
+  if (placement.type === 'newDay') {
+    const now = new Date().toISOString()
+    newDay = {
+      id: newDayId,
+      trip_id: moved.trip_id,
+      position: positionAtEnd(days.map((d) => d.position)),
+      notes: null,
+      created_at: now,
+      updated_at: now,
+    }
+    allDays = [...days, newDay]
+  }
+  const ordered = [...allDays].sort((a, b) =>
+    comparePositions(a.position, b.position),
+  )
+  const lists = new Map<string, Movable[]>(
+    ordered.map((d) => [
+      d.id,
+      displayOrder(stops.filter((s) => s.day_id === d.id)),
+    ]),
+  )
+  const take = (stop: Movable) => {
+    const list = lists.get(stop.day_id)
+    const i = list?.findIndex((s) => s.id === stop.id) ?? -1
+    if (list && i !== -1) list.splice(i, 1)
+  }
+
+  const target = placement.type === 'newDay' ? newDayId : placement.dayId
+  const targetList = lists.get(target)
+  if (!targetList) return null
+  take(moved)
+  const index = placement.type === 'newDay' ? 0 : placement.index
+  targetList.splice(Math.min(Math.max(index, 0), targetList.length), 0, moved)
+  if (placement.type === 'newDay') {
+    const end = stops.find((s) => s.kind === 'end' && s.id !== moved.id)
+    if (end) {
+      take(end)
+      targetList.push(end)
+    }
+  }
+
+  // Hand the start and end to the stops now in those places.
+  const kinds = new Map<string, StopKind>(stops.map((s) => [s.id, 'waypoint']))
+  const first = lists.get(ordered[0].id)!
+  const last = lists.get(ordered[ordered.length - 1].id)!
+  const holders: [TripEndKind, Movable | undefined][] = [
+    ['start', first[0]],
+    ['end', last.at(-1)],
+  ]
+  for (const [role, holder] of holders) {
+    if (!stops.some((s) => s.kind === role)) continue
+    if (!holder || kinds.get(holder.id) !== 'waypoint')
+      return { error: ROLE_ERRORS[role] }
+    kinds.set(holder.id, role)
+  }
+
+  // New keys for stops that moved or changed role; the others keep theirs.
+  // Stops sort by role first (start, waypoints, end), then key, so a
+  // waypoint's key only has to fit between the waypoints around it: the
+  // start's and end's keys may be out of order (saved by older versions) and
+  // must not be used as bounds. A new start or end gets a key before or after
+  // everything else on its day, so the keys stay in display order too.
+  const original = new Map(stops.map((s) => [s.id, s]))
+  const changes: StopChange[] = []
+  for (const [dayId, list] of lists) {
+    const final = new Map(list.map((s) => [s.id, original.get(s.id)!.position]))
+    const isChanged = (s: Movable) => {
+      const was = original.get(s.id)!
+      return (
+        s.id === moved.id ||
+        was.day_id !== dayId ||
+        was.kind !== kinds.get(s.id)
+      )
+    }
+    const isWaypoint = (s: Movable) => kinds.get(s.id) === 'waypoint'
+    const othersKeys = (stop: Movable) =>
+      list.filter((s) => s.id !== stop.id).map((s) => final.get(s.id)!)
+
+    let prev: string | null = null
+    for (const [i, stop] of list.entries()) {
+      const kind = kinds.get(stop.id)!
+      let position = final.get(stop.id)!
+      if (isChanged(stop)) {
+        if (kind === 'waypoint') {
+          const before = prev
+          const next =
+            list
+              .slice(i + 1)
+              .filter((s) => isWaypoint(s) && !isChanged(s))
+              .map((s) => s.position)
+              .find(
+                (p) => before === null || comparePositions(p, before) > 0,
+              ) ?? null
+          const fits =
+            (before === null || comparePositions(position, before) > 0) &&
+            (next === null || comparePositions(position, next) < 0)
+          if (!fits) position = positionBetween(before, next)
+        } else {
+          const others = othersKeys(stop)
+          const sign = kind === 'start' ? -1 : 1
+          if (others.some((k) => comparePositions(position, k) * sign <= 0))
+            position =
+              kind === 'start' ? positionAtStart(others) : positionAtEnd(others)
+        }
+        final.set(stop.id, position)
+      }
+      if (kind === 'waypoint') prev = position
+
+      const was = original.get(stop.id)!
+      const change: StopChange = { id: stop.id }
+      if (was.day_id !== dayId) change.day_id = dayId
+      if (was.position !== position) change.position = position
+      if (was.kind !== kind) change.kind = kind
+      if (Object.keys(change).length > 1) changes.push(change)
+    }
+  }
+
+  if (changes.length === 0 && !newDay) return null
+  return { newDay, changes }
+}
+
+/** A stop with `change` applied, as the database would save it. */
+function applied(stop: Stop, change: StopChange): Stop {
+  const next = { ...stop, ...change }
+  // Start and end can't be skipped.
+  if (next.kind !== 'waypoint') next.skipped = false
+  return next
 }
 
 type Result<T> = { data: T | null; error: { message: string } | null }
 
-/** The fields a move changes. */
-export type StopMove = { day_id?: string; position: string }
-
-export type SaveStopMove = (
-  stopId: string,
-  move: StopMove,
-) => Promise<Result<Stop>>
+/** Saves a batch of stop changes atomically, returning the saved rows. */
+export type SaveStopChanges = (changes: StopChange[]) => Promise<Result<Stop[]>>
 
 export type InsertDay = (
   day: Pick<Day, 'id' | 'trip_id' | 'position'>,
@@ -139,135 +272,83 @@ async function attempt<R extends { error: { message: string } | null }>(
 }
 
 /**
- * Move `stop` (to another day and/or position): update local state at once,
- * then save. If the save fails, restore the stop (unless `isLatest` says a
- * newer move of the same stop has happened since) and return the error
- * message.
- */
-export async function moveStop(
-  stop: Stop,
-  move: StopMove,
-  {
-    dispatch,
-    save,
-    isLatest,
-  }: {
-    dispatch: Dispatch<TripAction>
-    save: SaveStopMove
-    isLatest: () => boolean
-  },
-): Promise<string | null> {
-  // Same updated_at as the current row, so it isn't treated as stale; a
-  // newer version from realtime still wins over it.
-  dispatch({ type: 'upsertStop', stop: { ...stop, ...move } })
-
-  const result = await attempt(() => save(stop.id, move))
-  if (result.error || !result.data) {
-    // The original row is older than anything saved since, so this can't
-    // overwrite someone else's newer change.
-    if (isLatest()) dispatch({ type: 'upsertStop', stop })
-    return result.error?.message ?? 'The stop could not be found.'
-  }
-  dispatch({ type: 'upsertStop', stop: result.data })
-  return null
-}
-
-/**
- * Move `stop` to a new day added after the last one, and the trip's end stop
- * with it so the end stays on the last day. Local state updates at once.
- * Then the day is created, the stop moved into it, and the end stop moved.
+ * Carry out `plan`: update local state at once, then create the new day (if
+ * any) and save the stop changes in one request.
  *
- * On failure, local changes not yet saved are rolled back (each stop unless
- * `isLatest(stopId)` says it has been moved again since), and if the day was
- * created but the stop couldn't move into it, the empty day is deleted again.
- * Returns the error message, or null.
+ * On failure, each changed stop is restored unless `isLatest(stopId)` says it
+ * has been moved again since, and a new day is removed again (deleted, if it
+ * was created; the database refuses to delete a day that has stops, so that
+ * can't take anyone else's stops with it). Returns the error message, or
+ * null.
  */
-export async function moveToNewDay(
-  stop: Stop,
+export async function applyMove(
+  plan: MovePlan,
   {
-    days,
     stops,
-    newDayId,
     dispatch,
     insertDay,
     deleteDay,
     save,
     isLatest,
   }: {
-    days: Day[]
     stops: Stop[]
-    newDayId: string
     dispatch: Dispatch<TripAction>
     insertDay: InsertDay
     deleteDay: DeleteDay
-    save: SaveStopMove
+    save: SaveStopChanges
     isLatest: (stopId: string) => boolean
   },
 ): Promise<string | null> {
-  const now = new Date().toISOString()
-  const day: Day = {
-    id: newDayId,
-    trip_id: stop.trip_id,
-    position: positionAtEnd(days.map((d) => d.position)),
-    notes: null,
-    created_at: now,
-    updated_at: now,
-  }
-  const move: StopMove = {
-    day_id: day.id,
-    position: positionBetween(null, null),
-  }
-  const end = endStopPlacement(
-    [...days, day],
-    stops.map((s) => (s.id === stop.id ? { ...s, ...move } : s)),
-  )
-  const endMove: StopMove | null = end && {
-    day_id: end.dayId,
-    position: end.position,
-  }
-  const restore = (original: Stop) => {
-    if (isLatest(original.id)) dispatch({ type: 'upsertStop', stop: original })
-  }
-
-  dispatch({ type: 'upsertDay', day })
-  dispatch({ type: 'upsertStop', stop: { ...stop, ...move } })
-  if (end && endMove)
-    dispatch({ type: 'upsertStop', stop: { ...end.stop, ...endMove } })
-
-  const inserted = await attempt(() =>
-    insertDay({ id: day.id, trip_id: day.trip_id, position: day.position }),
-  )
-  if (inserted.error || !inserted.data) {
-    // Put the stops back first: removing a day drops its stops locally.
-    restore(stop)
-    if (end) restore(end.stop)
-    dispatch({ type: 'removeDay', id: day.id })
-    return inserted.error?.message ?? 'The day could not be added.'
-  }
-  dispatch({ type: 'upsertDay', day: inserted.data })
-
-  const error = await moveStop(stop, move, {
-    dispatch,
-    save,
-    isLatest: () => isLatest(stop.id),
+  const byId = new Map(stops.map((s) => [s.id, s]))
+  const originals = plan.changes.flatMap((c) => {
+    const stop = byId.get(c.id)
+    return stop ? [stop] : []
   })
-  if (error) {
-    if (end) restore(end.stop)
-    // Don't leave an empty day behind. The database refuses to delete a day
-    // that has stops, so this can't take anyone else's stops with it.
-    const deleted = await attempt(() => deleteDay(day.id))
-    if (!deleted.error) dispatch({ type: 'removeDay', id: day.id })
-    return error
+  const restore = () => {
+    // The original rows are older than anything saved since, so this can't
+    // overwrite someone else's newer change.
+    for (const stop of originals)
+      if (isLatest(stop.id)) dispatch({ type: 'upsertStop', stop })
+  }
+  const { newDay } = plan
+
+  if (newDay) dispatch({ type: 'upsertDay', day: newDay })
+  // Same updated_at as the current rows, so they aren't treated as stale; a
+  // newer version from realtime still wins.
+  for (const change of plan.changes) {
+    const stop = byId.get(change.id)
+    if (stop) dispatch({ type: 'upsertStop', stop: applied(stop, change) })
   }
 
-  if (end && endMove) {
-    const endError = await moveStop(end.stop, endMove, {
-      dispatch,
-      save,
-      isLatest: () => isLatest(end.stop.id),
-    })
-    if (endError) return `The end stop couldn't follow it: ${endError}`
+  if (newDay) {
+    const inserted = await attempt(() =>
+      insertDay({
+        id: newDay.id,
+        trip_id: newDay.trip_id,
+        position: newDay.position,
+      }),
+    )
+    if (inserted.error || !inserted.data) {
+      // Put the stops back first: removing a day drops its stops locally.
+      restore()
+      dispatch({ type: 'removeDay', id: newDay.id })
+      return inserted.error?.message ?? 'The day could not be added.'
+    }
+    dispatch({ type: 'upsertDay', day: inserted.data })
   }
+
+  if (plan.changes.length === 0) return null
+  const result = await attempt(() => save(plan.changes))
+  if (result.error || !result.data) {
+    restore()
+    if (newDay) {
+      // Don't leave an empty day behind.
+      const deleted = await attempt(() => deleteDay(newDay.id))
+      if (!deleted.error) dispatch({ type: 'removeDay', id: newDay.id })
+    }
+    return result.error?.message ?? 'The stops could not be saved.'
+  }
+  for (const stop of result.data) dispatch({ type: 'upsertStop', stop })
   return null
 }
 
