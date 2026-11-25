@@ -70,7 +70,12 @@ describe('tripReducer', () => {
     expect(tripReducer(initialTripState, { type: 'notFound' })).toEqual({
       status: 'notFound',
     })
-    expect(ready()).toEqual({ status: 'ready', removedIds: new Set(), ...data })
+    expect(ready()).toEqual({
+      status: 'ready',
+      removedIds: new Set(),
+      refreshing: null,
+      ...data,
+    })
     expect(tripReducer(ready(), { type: 'loading' })).toEqual({
       status: 'loading',
       pending: [],
@@ -112,6 +117,7 @@ describe('tripReducer', () => {
     const start: TripState = {
       status: 'ready',
       removedIds: new Set(),
+      refreshing: null,
       ...data,
       trip: { ...trip, name: 'New', updated_at: at('10:00') },
       days: [day],
@@ -256,5 +262,116 @@ describe('tripReducer', () => {
       start,
     )
     expect(tripReducer(start, { type: 'upsertDay', day: otherDay })).toBe(start)
+  })
+
+  it('ignores removals of ids it does not have when asked', () => {
+    const start = ready()
+    expect(
+      tripReducer(start, { type: 'removeStop', id: 'x', ifPresent: true }),
+    ).toBe(start)
+    expect(
+      tripReducer(start, { type: 'removeDay', id: 'y', ifPresent: true }),
+    ).toBe(start)
+    const removed = tripReducer(start, {
+      type: 'removeStop',
+      id: 's2',
+      ifPresent: true,
+    })
+    if (removed.status !== 'ready') throw new Error('not ready')
+    expect(removed.stops.map((s) => s.id)).toEqual(['s1', 's3'])
+    expect(removed.removedIds).toEqual(new Set(['s2']))
+  })
+
+  it('checks ifPresent removals buffered while loading on replay', () => {
+    let state: TripState = tripReducer(initialTripState, {
+      type: 'removeStop',
+      id: 's2',
+      ifPresent: true,
+    })
+    state = tripReducer(state, { type: 'removeStop', id: 'x', ifPresent: true })
+    state = tripReducer(state, { type: 'loaded', data })
+    if (state.status !== 'ready') throw new Error('not ready')
+    expect(state.stops.map((s) => s.id)).toEqual(['s1', 's3'])
+    expect(state.removedIds).toEqual(new Set(['s2']))
+  })
+})
+
+describe('tripReducer refresh', () => {
+  it('keeps showing data while refreshing and replays patches onto the snapshot', () => {
+    let state = tripReducer(ready(), { type: 'refreshing' })
+    expect(state).toMatchObject({ status: 'ready', refreshing: [] })
+
+    // Applied right away, and remembered for the snapshot.
+    state = tripReducer(state, {
+      type: 'upsertStop',
+      stop: makeStop('s9', 'd1'),
+    })
+    state = tripReducer(state, { type: 'removeStop', id: 's1' })
+    if (state.status !== 'ready') throw new Error('not ready')
+    expect(state.stops.map((s) => s.id)).toEqual(['s2', 's3', 's9'])
+
+    // The snapshot was taken before those changes and has a remote edit.
+    state = tripReducer(state, {
+      type: 'loaded',
+      data: {
+        ...data,
+        days: [makeDay('d1', 'a0')],
+        stops: [makeStop('s1', 'd1')],
+      },
+    })
+    if (state.status !== 'ready') throw new Error('not ready')
+    expect(state.refreshing).toBeNull()
+    expect(state.days.map((d) => d.id)).toEqual(['d1'])
+    expect(state.stops.map((s) => s.id)).toEqual(['s9'])
+  })
+
+  it('stops buffering once loaded', () => {
+    let state = tripReducer(ready(), { type: 'refreshing' })
+    state = tripReducer(state, { type: 'loaded', data })
+    state = tripReducer(state, { type: 'removeStop', id: 's1' })
+    expect(state.status === 'ready' && state.refreshing).toBeNull()
+  })
+
+  it('keeps buffered patches if a refresh is superseded by another', () => {
+    let state = tripReducer(ready(), { type: 'refreshing' })
+    state = tripReducer(state, { type: 'removeStop', id: 's1' })
+    state = tripReducer(state, { type: 'refreshing' })
+    state = tripReducer(state, { type: 'loaded', data })
+    expect(state.status === 'ready' && state.stops.map((s) => s.id)).toEqual([
+      's2',
+      's3',
+    ])
+  })
+
+  it('keeps the current data if a refresh fails', () => {
+    let state = tripReducer(ready(), { type: 'refreshing' })
+    state = tripReducer(state, { type: 'removeStop', id: 's1' })
+    state = tripReducer(state, { type: 'refreshFailed', error: 'offline' })
+    if (state.status !== 'ready') throw new Error('not ready')
+    expect(state.refreshing).toBeNull()
+    expect(state.stops.map((s) => s.id)).toEqual(['s2', 's3'])
+  })
+
+  it('shows the error if a refresh replaced the first load and failed', () => {
+    let state = tripReducer(initialTripState, { type: 'refreshing' })
+    expect(state).toBe(initialTripState)
+    state = tripReducer(state, { type: 'refreshFailed', error: 'offline' })
+    expect(state).toEqual({ status: 'error', error: 'offline' })
+  })
+
+  it('replays patches buffered during the first load when a refresh finishes it', () => {
+    let state = tripReducer(initialTripState, { type: 'refreshing' })
+    state = tripReducer(state, { type: 'removeStop', id: 's1' })
+    state = tripReducer(state, { type: 'loaded', data })
+    expect(state.status === 'ready' && state.stops.map((s) => s.id)).toEqual([
+      's2',
+      's3',
+    ])
+  })
+
+  it('recovers from an error or not found when a refresh succeeds', () => {
+    const failed = tripReducer(initialTripState, { type: 'failed', error: 'x' })
+    expect(tripReducer(failed, { type: 'refreshing' })).toBe(failed)
+    expect(tripReducer(failed, { type: 'loaded', data }).status).toBe('ready')
   })
 })

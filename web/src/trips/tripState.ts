@@ -22,18 +22,38 @@ export type TripState =
        * for one can't bring it back. Ids are never reused.
        */
       removedIds: ReadonlySet<string>
+      /**
+       * While refetching (e.g. after a realtime reconnect), patches applied
+       * since the refetch started. They're replayed onto the fresh snapshot
+       * so nothing that happened during the request is lost. Null otherwise.
+       */
+      refreshing: TripPatch[] | null
     } & TripData)
 
-/** Changes from local edits or realtime events. */
+/**
+ * Changes from local edits or realtime events.
+ *
+ * `ifPresent` on a removal ignores ids this trip doesn't have. Realtime
+ * DELETE events can't be filtered by trip (see `realtime.ts`), so every
+ * deleted day or stop in the database arrives; this keeps other trips' ids
+ * out of `removedIds`.
+ */
 export type TripPatch =
   | { type: 'updateTrip'; trip: Partial<Trip> }
   | { type: 'upsertDay'; day: Day }
-  | { type: 'removeDay'; id: string }
+  | { type: 'removeDay'; id: string; ifPresent?: boolean }
   | { type: 'upsertStop'; stop: Stop }
-  | { type: 'removeStop'; id: string }
+  | { type: 'removeStop'; id: string; ifPresent?: boolean }
 
 export type TripAction =
   | { type: 'loading' }
+  /** Refetch in the background, keeping the current data on screen. */
+  | { type: 'refreshing' }
+  /**
+   * A background refetch failed. Keep the current data if there is any;
+   * otherwise (it superseded the first load) show the error.
+   */
+  | { type: 'refreshFailed'; error: string }
   | { type: 'loaded'; data: TripData }
   | { type: 'failed'; error: string }
   | { type: 'notFound' }
@@ -66,11 +86,26 @@ export function tripReducer(state: TripState, action: TripAction): TripState {
   switch (action.type) {
     case 'loading':
       return { status: 'loading', pending: [] }
-    case 'loaded':
-      // Stale checks make replaying safe if the snapshot already has a change.
+    case 'refreshing':
+      // Keep patches buffered by an earlier refresh that was superseded.
+      return state.status === 'ready'
+        ? { ...state, refreshing: state.refreshing ?? [] }
+        : state
+    case 'refreshFailed':
+      if (state.status === 'ready') return { ...state, refreshing: null }
       return state.status === 'loading'
-        ? state.pending.reduce(applyPatch, loaded(action.data))
-        : loaded(action.data)
+        ? { status: 'error', error: action.error }
+        : state
+    case 'loaded': {
+      // Stale checks make replaying safe if the snapshot already has a change.
+      const pending =
+        state.status === 'loading'
+          ? state.pending
+          : state.status === 'ready'
+            ? (state.refreshing ?? [])
+            : []
+      return pending.reduce(applyPatch, loaded(action.data))
+    }
     case 'failed':
       return { status: 'error', error: action.error }
     case 'notFound':
@@ -80,11 +115,15 @@ export function tripReducer(state: TripState, action: TripAction): TripState {
   if (state.status === 'loading') {
     return { ...state, pending: [...state.pending, action] }
   }
-  return applyPatch(state, action)
+  const next = applyPatch(state, action)
+  if (next.status === 'ready' && next.refreshing) {
+    return { ...next, refreshing: [...next.refreshing, action] }
+  }
+  return next
 }
 
 function loaded(data: TripData): TripState {
-  return { status: 'ready', removedIds: new Set(), ...data }
+  return { status: 'ready', removedIds: new Set(), refreshing: null, ...data }
 }
 
 function withRemoved(removedIds: ReadonlySet<string>, ids: string[]) {
@@ -107,6 +146,9 @@ function applyPatch(state: TripState, action: TripPatch): TripState {
       return days === state.days ? state : { ...state, days }
     }
     case 'removeDay': {
+      if (action.ifPresent && !state.days.some((d) => d.id === action.id)) {
+        return state
+      }
       // Stops cascade-delete with their day. Remember the ids even if the
       // rows aren't here (e.g. the snapshot was taken after the delete).
       const gone = state.stops.filter((s) => s.day_id === action.id)
@@ -129,6 +171,9 @@ function applyPatch(state: TripState, action: TripPatch): TripState {
       return stops === state.stops ? state : { ...state, stops }
     }
     case 'removeStop':
+      if (action.ifPresent && !state.stops.some((s) => s.id === action.id)) {
+        return state
+      }
       return {
         ...state,
         stops: remove(state.stops, action.id),
