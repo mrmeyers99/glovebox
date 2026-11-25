@@ -87,7 +87,7 @@ export function TripPage() {
         className="trip-panel trip-panel-map"
         aria-label="Map"
       >
-        <MapPanel />
+        <MapPanel stops={stops} />
       </section>
 
       {settingsOpen && (
