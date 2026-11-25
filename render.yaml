@@ -23,8 +23,8 @@ services:
     envVars:
       - key: NODE_VERSION
         value: '22'
-      # Set these in the Render dashboard (Supabase: Project Settings → API).
+      # Set these in the Render dashboard (Supabase: Project Settings → API Keys).
       - key: VITE_SUPABASE_URL
         sync: false
-      - key: VITE_SUPABASE_ANON_KEY
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
         sync: false
