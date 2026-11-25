@@ -5,7 +5,6 @@ import {
   useState,
   type Dispatch,
   type FormEvent,
-  type KeyboardEvent,
   type ReactNode,
 } from 'react'
 import type { CostCategory, Day, Stop } from '../lib/database.types'
@@ -23,15 +22,14 @@ import {
   newStopPosition,
   parseStopForm,
   placeFromStop,
-  placeQuery,
   searchFocus,
   stopFormFromStop,
   type StopFields,
   type StopFormErrors,
   type StopFormInput,
 } from './addStop'
+import { PlaceSearchField } from './PlaceSearchField'
 import type { TripAction } from './tripState'
-import { usePlaceSearch } from './usePlaceSearch'
 
 /** Adding a waypoint to a day, or opening an existing stop. */
 export type StopDialogMode =
@@ -90,7 +88,6 @@ function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
   // The stop as it was when opened; saving sends only what changed since.
   const [original] = useState(editing)
   const dayId = mode.type === 'add' ? mode.dayId : mode.stop.day_id
-  const [query, setQuery] = useState('')
   const [place, setPlace] = useState<Place | null>(() =>
     editing ? placeFromStop(editing) : null,
   )
@@ -109,7 +106,6 @@ function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
       ? { lat: editing.lat, lng: editing.lng }
       : searchFocus(days, stops, dayId),
   )
-  const search = usePlaceSearch(query, focus)
   const dayStops = useMemo(
     () => stops.filter((s) => s.day_id === dayId),
     [stops, dayId],
@@ -126,16 +122,7 @@ function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
       name: nameAfterPick(prev.name, place, picked),
     }))
     setPlace(picked)
-    setQuery('')
     setErrors((prev) => ({ ...prev, place: undefined, name: undefined }))
-  }
-
-  function onSearchKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    // Enter picks the top result instead of submitting the form.
-    if (event.key !== 'Enter') return
-    event.preventDefault()
-    const [first] = search.results
-    if (first && !search.searching) pick(first)
   }
 
   function insert(fields: StopFields) {
@@ -229,7 +216,6 @@ function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
     ) : null
   }
 
-  const showResults = placeQuery(query) !== null
   const title = editing
     ? `Edit ${kindNoun(editing)} on Day ${mode.dayNumber}`
     : `Add a stop to Day ${mode.dayNumber}`
@@ -238,38 +224,15 @@ function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
     <form className="dialog-form" noValidate onSubmit={save}>
       <h2 id="stop-dialog-title">{title}</h2>
 
-      <div className="field">
-        <label htmlFor={fieldId('place')}>Place</label>
-        <input
-          id={fieldId('place')}
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={onSearchKeyDown}
-          placeholder={place ? 'Search to change the place' : 'Search places'}
-          autoComplete="off"
-          // When editing, details are more often what changes than the place.
-          autoFocus={!editing}
-          aria-invalid={errors.place ? true : undefined}
-          aria-describedby={
-            errors.place ? `${fieldId('place')}-error` : 'stop-place-picked'
-          }
-        />
-        {showResults && (
-          <PlaceResults
-            results={search.results}
-            searching={search.searching}
-            error={search.error}
-            onPick={pick}
-          />
-        )}
-        <span id="stop-place-picked" className="field-hint">
-          {place
-            ? `Selected: ${placeLabel(place)}`
-            : 'Pick a result to set the location.'}
-        </span>
-        {fieldError('place')}
-      </div>
+      <PlaceSearchField
+        id={fieldId('place')}
+        place={place}
+        focus={focus}
+        error={errors.place}
+        // When editing, details are more often what changes than the place.
+        autoFocus={!editing}
+        onPick={pick}
+      />
 
       <div className="field">
         <label htmlFor={fieldId('name')}>Name</label>
@@ -457,55 +420,6 @@ function kindNoun(stop: Pick<Stop, 'kind'>, capitalized = false) {
   return capitalized ? noun[0].toUpperCase() + noun.slice(1) : noun
 }
 
-function placeLabel(place: Place) {
-  return [place.name, place.address].filter(Boolean).join(', ')
-}
-
 function fieldId(field: FieldName) {
   return `stop-${field}`
-}
-
-function PlaceResults({
-  results,
-  searching,
-  error,
-  onPick,
-}: {
-  results: Place[]
-  searching: boolean
-  error: string | null
-  onPick: (place: Place) => void
-}) {
-  if (error) {
-    return (
-      <p role="alert" className="field-error">
-        {error}
-      </p>
-    )
-  }
-  if (results.length === 0) {
-    return (
-      <p className="field-hint" aria-live="polite">
-        {searching ? 'Searching…' : 'No places found.'}
-      </p>
-    )
-  }
-  return (
-    <ul
-      className="place-results"
-      aria-label="Search results"
-      aria-busy={searching}
-    >
-      {results.map((result) => (
-        <li key={`${result.lat},${result.lng},${result.name}`}>
-          <button type="button" onClick={() => onPick(result)}>
-            <span className="place-name">{result.name}</span>
-            {result.address && (
-              <span className="place-address">{result.address}</span>
-            )}
-          </button>
-        </li>
-      ))}
-    </ul>
-  )
 }

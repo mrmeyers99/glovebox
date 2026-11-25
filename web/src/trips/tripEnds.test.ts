@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { endStopPlacement, lastDay } from './tripEnds'
+import type { Place } from '../lib/geocode'
+import {
+  endStopPlacement,
+  firstDay,
+  lastDay,
+  missingTripEnds,
+  parseTripEndForm,
+  tripEndPlacement,
+  tripEndSaveError,
+  tripEndSlot,
+} from './tripEnds'
 
 const days = [
   { id: 'd2', position: 'a1' },
@@ -65,5 +75,149 @@ describe('endStopPlacement', () => {
       endStopPlacement(days, [stop('a', 'waypoint', 'd1', 'a0')]),
     ).toBeNull()
     expect(endStopPlacement([], [stop('end', 'end', 'd1', 'a0')])).toBeNull()
+  })
+})
+
+describe('firstDay', () => {
+  it('is the day with the smallest position, whatever the input order', () => {
+    expect(firstDay(days)?.id).toBe('d1')
+    expect(firstDay([])).toBeUndefined()
+  })
+})
+
+describe('tripEndSlot', () => {
+  const stops = [
+    stop('a', 'waypoint', 'd1', 'a3'),
+    stop('b', 'waypoint', 'd1', 'a1'),
+    stop('c', 'waypoint', 'd3', 'a5'),
+  ]
+
+  it('puts a new start on the first day, before its stops', () => {
+    const slot = tripEndSlot('start', days, stops)
+    expect(slot?.dayId).toBe('d1')
+    expect(slot!.position < 'a1').toBe(true)
+  })
+
+  it('puts a new end on the last day, after its stops', () => {
+    const slot = tripEndSlot('end', days, stops)
+    expect(slot?.dayId).toBe('d3')
+    expect(slot!.position > 'a5').toBe(true)
+  })
+
+  it('ignores the stop being placed', () => {
+    // An existing start with a low key doesn't push the new key lower.
+    expect(
+      tripEndSlot('start', days, [stop('s', 'start', 'd1', 'Zz')]),
+    ).toEqual({ dayId: 'd1', position: 'a0' })
+  })
+
+  it('uses a key that fits on an empty day', () => {
+    expect(tripEndSlot('start', days, [])).toEqual({
+      dayId: 'd1',
+      position: 'a0',
+    })
+    expect(tripEndSlot('end', days, [])).toEqual({
+      dayId: 'd3',
+      position: 'a0',
+    })
+  })
+
+  it('compares keys byte-wise', () => {
+    // 'Zz' sorts before 'a0' byte-wise, so the start must go before 'Zz'.
+    const slot = tripEndSlot('start', days, [
+      stop('a', 'waypoint', 'd1', 'a0'),
+      stop('b', 'waypoint', 'd1', 'Zz'),
+    ])
+    expect(slot!.position < 'Zz').toBe(true)
+  })
+
+  it('is null without days', () => {
+    expect(tripEndSlot('start', [], [])).toBeNull()
+    expect(tripEndSlot('end', [], [])).toBeNull()
+  })
+})
+
+describe('tripEndPlacement', () => {
+  it('moves the start stop to the first day, before its stops', () => {
+    const stops = [
+      stop('start', 'start', 'd2', 'a0'),
+      stop('a', 'waypoint', 'd1', 'a0'),
+    ]
+    const placement = tripEndPlacement('start', days, stops)
+    expect(placement?.stop.id).toBe('start')
+    expect(placement?.dayId).toBe('d1')
+    expect(placement!.position < 'a0').toBe(true)
+  })
+
+  it('is null when the start is already on the first day', () => {
+    expect(
+      tripEndPlacement('start', days, [stop('start', 'start', 'd1', 'a5')]),
+    ).toBeNull()
+  })
+
+  it('handles the end like endStopPlacement', () => {
+    const stops = [stop('end', 'end', 'd1', 'a0')]
+    expect(tripEndPlacement('end', days, stops)).toEqual(
+      endStopPlacement(days, stops),
+    )
+  })
+})
+
+describe('missingTripEnds', () => {
+  it('lists the ends the trip has no stop for', () => {
+    expect(missingTripEnds([])).toEqual(new Set(['start', 'end']))
+    expect(missingTripEnds([{ kind: 'waypoint' }, { kind: 'start' }])).toEqual(
+      new Set(['end']),
+    )
+    expect(missingTripEnds([{ kind: 'end' }, { kind: 'start' }])).toEqual(
+      new Set(),
+    )
+  })
+})
+
+describe('parseTripEndForm', () => {
+  const denver: Place = {
+    name: 'Denver',
+    address: 'CO, USA',
+    lat: 39.74,
+    lng: -104.99,
+  }
+
+  it('returns the place and trimmed name', () => {
+    expect(parseTripEndForm('  Home  ', denver)).toEqual({
+      ok: true,
+      fields: { name: 'Home', address: 'CO, USA', lat: 39.74, lng: -104.99 },
+    })
+  })
+
+  it('requires a place and a name', () => {
+    const result = parseTripEndForm(' ', null)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors.place).toBeDefined()
+      expect(result.errors.name).toBeDefined()
+    }
+  })
+
+  it('stores a blank address as null', () => {
+    const result = parseTripEndForm('Home', { ...denver, address: ' ' })
+    expect(result.ok && result.fields.address).toBeNull()
+  })
+})
+
+describe('tripEndSaveError', () => {
+  it('explains a duplicate start or end', () => {
+    expect(
+      tripEndSaveError('start', { code: '23505', message: 'duplicate key' }),
+    ).toMatch(/already has a start/)
+    expect(
+      tripEndSaveError('end', { code: '23505', message: 'duplicate key' }),
+    ).toMatch(/already has an end/)
+  })
+
+  it('passes other errors through', () => {
+    expect(tripEndSaveError('end', { message: 'Network error' })).toBe(
+      'Network error',
+    )
   })
 })

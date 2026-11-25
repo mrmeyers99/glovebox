@@ -242,7 +242,7 @@ export function canDeleteStop(stop: Pick<Stop, 'kind'>): boolean {
  */
 export function nameAfterPick(
   currentName: string,
-  previous: Place | null,
+  previous: Pick<Place, 'name'> | null,
   place: Place,
 ): string {
   const current = currentName.trim()

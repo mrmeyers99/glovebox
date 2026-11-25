@@ -1,11 +1,13 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import type { Trip } from '../lib/database.types'
+import type { Stop, Trip } from '../lib/database.types'
 import { DayListPanel } from './DayListPanel'
 import { MapPanel } from './MapPanel'
 import type { StopSelection } from './mapView'
 import { ShareDialog } from './ShareDialog'
 import { StopDialog, type StopDialogMode } from './StopDialog'
+import { TripEndDialog } from './TripEndDialog'
+import type { TripEndKind } from './tripEnds'
 import { TripSettingsDialog } from './TripSettingsDialog'
 import { useMoveStop } from './useMoveStop'
 import { useTrip } from './useTrip'
@@ -38,6 +40,15 @@ export function TripPage() {
     | { type: 'edit'; stopId: string }
     | null
   >(null)
+  // The start or end being set (no stop) or changed.
+  const [tripEnd, setTripEnd] = useState<{
+    kind: TripEndKind
+    stop?: Stop
+  } | null>(null)
+  const openTripEnd = useCallback(
+    (kind: TripEndKind, stop?: Stop) => setTripEnd({ kind, stop }),
+    [],
+  )
   // Which panel shows at phone width; desktop shows both.
   const [view, setView] = useState<View>('list')
   // Stop selected in the day list or on the map; the other panel follows.
@@ -141,6 +152,7 @@ export function TripPage() {
           onSelectStop={selectFromList}
           onAddStop={canEdit ? openAddStop : undefined}
           onMoveStop={canEdit ? moveStop.move : undefined}
+          onSetTripEnd={canEdit ? openTripEnd : undefined}
         />
       </section>
       <section
@@ -179,6 +191,17 @@ export function TripPage() {
           stops={stops}
           dispatch={dispatch}
           onClose={() => setStopDialog(null)}
+        />
+      )}
+      {tripEnd && canEdit && (
+        <TripEndDialog
+          tripId={trip.id}
+          kind={tripEnd.kind}
+          stop={tripEnd.stop}
+          days={days}
+          stops={stops}
+          dispatch={dispatch}
+          onClose={() => setTripEnd(null)}
         />
       )}
       {shareOpen && role && (
