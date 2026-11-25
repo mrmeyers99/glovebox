@@ -42,14 +42,15 @@ The app calls a function with `supabase.functions.invoke('health')`; supabase-js
 
 Supabase provides `SUPABASE_URL` and the project's keys to functions automatically. Third-party keys the functions need:
 
-| Secret        | Used by   | Where to get it                                                                                                  |
-| ------------- | --------- | ---------------------------------------------------------------------------------------------------------------- |
-| `ORS_API_KEY` | `geocode` | Free key from [openrouteservice.org](https://openrouteservice.org) (sign up, then Dashboard → API Keys → Create) |
+| Secret        | Used by     | Where to get it                                                                                                                                       |
+| ------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ORS_API_KEY` | `geocode`   | Free key from [openrouteservice.org](https://openrouteservice.org) (sign up, then Dashboard → API Keys → Create)                                      |
+| `EIA_API_KEY` | `gas-price` | Free key from the U.S. Energy Information Administration: register at [eia.gov/opendata](https://www.eia.gov/opendata/) and the key is emailed to you |
 
-Without it, `geocode` answers 503 "Place search is not configured". Set them with the [Supabase CLI](https://supabase.com/docs/guides/cli) (after `supabase login`):
+Without `ORS_API_KEY`, `geocode` answers 503 "Place search is not configured". Without `EIA_API_KEY`, `gas-price` answers 503 (or the last cached price), and trips without their own gas price show gas as pending. `gas-price` caches the weekly national average in `gas_price_cache`, so EIA is called about once a week. Set them with the [Supabase CLI](https://supabase.com/docs/guides/cli) (after `supabase login`):
 
 ```bash
-supabase secrets set ORS_API_KEY=your-key --remote=<project-id>
+supabase secrets set ORS_API_KEY=your-key EIA_API_KEY=your-eia-key --remote=<project-id>
 ```
 
 or in the dashboard under Edge Functions → Secrets. Functions read them with `Deno.env.get('ORS_API_KEY')`. Never put them in `web/`.

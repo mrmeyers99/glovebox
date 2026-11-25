@@ -254,6 +254,50 @@ exception when insufficient_privilege then null;
 end $$;
 reset role;
 
+-- Gas price cache: the national average, written only by the gas-price Edge
+-- Function (service role). Signed-in users can read it but not change it.
+set role service_role;
+insert into public.gas_price_cache (region, price_per_gallon, as_of)
+  values ('US', 3.1, '2026-11-16');
+insert into public.gas_price_cache (region, price_per_gallon, as_of)
+  values ('US', 3.061, '2026-11-23')
+  on conflict (region) do update set
+    price_per_gallon = excluded.price_per_gallon,
+    as_of = excluded.as_of,
+    fetched_at = now();
+reset role;
+
+do $$ begin perform pg_temp.act_as('dave'); end $$;
+do $$ begin
+  assert (select price_per_gallon from public.gas_price_cache where region = 'US') = 3.061,
+    'service role can refresh the gas price; any signed-in user can read it';
+  begin
+    insert into public.gas_price_cache (region, price_per_gallon, as_of)
+      values ('CA', 5, '2026-11-23');
+    assert false, 'signed-in user cannot write gas_price_cache';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.gas_price_cache set price_per_gallon = 0.01;
+    assert false, 'signed-in user cannot update gas_price_cache';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    delete from public.gas_price_cache;
+    assert false, 'signed-in user cannot delete from gas_price_cache';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+set role anon;
+do $$ begin
+  perform 1 from public.gas_price_cache;
+  assert false, 'anon cannot read gas_price_cache';
+exception when insufficient_privilege then null;
+end $$;
+reset role;
+
 -- Anonymous users have no access.
 set role anon;
 do $$ begin
