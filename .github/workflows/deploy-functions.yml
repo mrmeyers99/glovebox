@@ -3,7 +3,8 @@ name: Deploy functions
 on:
   push:
     branches: [main]
-    paths: ['supabase/functions/**']
+    # config.jsonc holds each function's settings (and unrelated ones; redeploying is harmless).
+    paths: ['supabase/functions/**', 'supabase/config.jsonc']
   workflow_dispatch:
 
 # Never run two deploys at once; a newer push waits for the running one.
@@ -20,6 +21,15 @@ jobs:
       SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v6
+
+      # Deploys don't wait for CI, so run the same checks here first.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Check, lint and test functions
+        working-directory: supabase/functions
+        run: deno check . && deno lint && deno test --allow-env --allow-read
 
       - uses: supabase/setup-cli@v1
         with:

@@ -1,12 +1,15 @@
 {
   "imports": {
+    "@std/assert": "jsr:@std/assert@1",
+    "@std/jsonc": "jsr:@std/jsonc@1",
     "@supabase/server": "npm:@supabase/server@1.9.2",
     "@supabase/supabase-js": "npm:@supabase/supabase-js@2.119.2",
-    "@std/assert": "jsr:@std/assert@1",
     "jose": "npm:jose@6"
   },
   "lock": false,
   "lint": {
-    "rules": { "tags": ["recommended"] }
+    "rules": {
+      "tags": ["recommended"]
+    }
   }
 }

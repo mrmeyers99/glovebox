@@ -39,7 +39,7 @@ jobs:
           deno-version: v2.x
       - run: deno check .
       - run: deno lint
-      - run: deno test --allow-env
+      - run: deno test --allow-env --allow-read
 
   database:
     name: Migrations and permission tests

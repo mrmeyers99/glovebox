@@ -20,7 +20,7 @@ React + TypeScript (Vite) frontend, Supabase backend (Postgres, Auth, Realtime, 
 - **Web app:** [Render](https://render.com) static site, defined in `render.yaml`. Pushes to `main` deploy to production once GitHub checks pass; pull requests get preview URLs.
 - **Database:** `.github/workflows/deploy-db.yml` applies new files in `supabase/migrations/` to Supabase when they reach `main`. It can also be run by hand from the Actions tab, with an option to mark migrations that were applied manually.
 
-- **Edge Functions:** `.github/workflows/deploy-functions.yml` deploys every function in `supabase/functions/` when anything there changes on `main` (or when run by hand from the Actions tab). Function settings live in `supabase/config.jsonc`; if you change only those, run the workflow by hand. Removing a function from the repo doesn't delete it from Supabase; delete it in the dashboard.
+- **Edge Functions:** `.github/workflows/deploy-functions.yml` deploys every function in `supabase/functions/` or `supabase/config.jsonc` changes on `main` (or when run by hand from the Actions tab). It runs the Deno checks and tests first, so it doesn't depend on CI passing. Removing a function from the repo doesn't delete it from Supabase; delete it in the dashboard.
 
 Required GitHub secrets: `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`, `SUPABASE_PROJECT_ID`, and `CLAUDE_CODE_OAUTH_TOKEN` for reviews. Render needs `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
 
@@ -34,7 +34,7 @@ Server-side code that calls third-party APIs (routing, place search, gas prices)
 - `admin.ts`: `adminClient()` uses the secret (service-role) key and bypasses row-level security. Use it only for server-owned data such as API caches.
 - `http.ts` and `cors.ts`: `handle()` answers CORS preflight and turns thrown errors into JSON; `json()` adds CORS headers.
 
-Functions are deployed with the gateway's JWT check turned off (`verify_jwt: false` in `supabase/config.jsonc`) and check the caller themselves, so every function that isn't deliberately public must call `requireUser` first. Add each new function to the `functions` section of `supabase/config.jsonc`.
+Functions are deployed with the gateway's JWT check turned off (`verify_jwt: false` in `supabase/config.jsonc`) and check the caller themselves, so every function that isn't deliberately public must call `requireUser` first. Add each new function to the `functions` section of `supabase/config.jsonc`. A function missing from it would still deploy, but with the gateway's JWT check on and without the shared import map, so `_shared/config_test.ts` fails until it's listed.
 
 The app calls a function with `supabase.functions.invoke('health')`; supabase-js sends the signed-in user's token.
 
@@ -65,13 +65,13 @@ Functions are served at `http://127.0.0.1:54321/functions/v1/<name>` and reload 
 `supabase/functions` is Deno code, so `npm run check` doesn't type-check or lint it (Prettier still formats it). Check it with [Deno](https://deno.com) from `supabase/functions`; CI runs the same:
 
 ```bash
-deno check . && deno lint && deno test --allow-env
+deno check . && deno lint && deno test --allow-env --allow-read
 ```
 
 ## Checks
 
 - `npm run check`: format, lint, typecheck, unit tests
 - `npm run test:db`: migrations and permission tests against a local Postgres
-- `deno check . && deno lint && deno test --allow-env` in `supabase/functions`: Edge Functions
+- `deno check . && deno lint && deno test --allow-env --allow-read` in `supabase/functions`: Edge Functions
 
 CI runs all of these on every pull request. Pull requests also get an automatic Claude Code review, and Renovate opens weekly dependency updates.
