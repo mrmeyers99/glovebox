@@ -54,6 +54,26 @@ export function presenceColorVar(color: number) {
   return `var(--presence-color-${color})`
 }
 
+/**
+ * What others see this user editing: an open stop form (an edited stop, or
+ * the start or end being changed), or adding a stop to a day. Viewers only
+ * read, so they never show as editing.
+ */
+export function editingFocus(
+  canEdit: boolean,
+  stopDialog:
+    | { type: 'edit'; stop: { id: string } }
+    | { type: 'add'; dayId: string }
+    | null,
+  tripEndStopId: string | undefined,
+): PresenceFocus | null {
+  if (!canEdit) return null
+  if (stopDialog?.type === 'edit') return { stopId: stopDialog.stop.id }
+  if (tripEndStopId) return { stopId: tripEndStopId }
+  if (stopDialog?.type === 'add') return { dayId: stopDialog.dayId }
+  return null
+}
+
 /** Sets `--presence-color` on a stop or day being edited by `peers`. */
 export function presenceOutline(
   peers: Peer[] | undefined,

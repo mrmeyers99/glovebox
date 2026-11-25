@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  editingFocus,
   indexPresence,
   initials,
   listNames,
@@ -7,6 +8,7 @@ import {
   peersFromState,
   presenceColor,
   PRESENCE_COLOR_COUNT,
+  presenceOutline,
 } from './presence'
 
 describe('presenceColor', () => {
@@ -102,5 +104,57 @@ describe('listNames', () => {
     expect(listNames([{ name: 'Ann' }, { name: 'Pat' }, { name: 'Zoe' }])).toBe(
       'Ann, Pat and Zoe',
     )
+  })
+})
+
+describe('peersFromState ordering', () => {
+  it('breaks name ties by user id', () => {
+    const state = {
+      a: [{ user_id: 'u9', name: 'Pat' }],
+      b: [{ user_id: 'u1', name: 'Pat' }],
+      c: [{ user_id: 'u5', name: 'Pat', focus: 'not an object' }],
+    }
+    expect(peersFromState(state, undefined).map((p) => p.userId)).toEqual([
+      'u1',
+      'u5',
+      'u9',
+    ])
+  })
+})
+
+describe('presenceOutline', () => {
+  it('uses the first editor’s colour', () => {
+    expect(
+      presenceOutline([
+        { userId: 'u1', name: 'Pat', color: 3, focus: [] },
+        { userId: 'u2', name: 'Zoe', color: 5, focus: [] },
+      ]),
+    ).toEqual({ '--presence-color': 'var(--presence-color-3)' })
+  })
+
+  it('is unset without editors', () => {
+    expect(presenceOutline(undefined)).toBeUndefined()
+    expect(presenceOutline([])).toBeUndefined()
+  })
+})
+
+describe('editingFocus', () => {
+  const edit = { type: 'edit' as const, stop: { id: 's1' } }
+  const add = { type: 'add' as const, dayId: 'd1' }
+
+  it('is the stop being edited, or the day a stop is being added to', () => {
+    expect(editingFocus(true, edit, undefined)).toEqual({ stopId: 's1' })
+    expect(editingFocus(true, add, undefined)).toEqual({ dayId: 'd1' })
+    expect(editingFocus(true, null, 's2')).toEqual({ stopId: 's2' })
+    expect(editingFocus(true, null, undefined)).toBeNull()
+  })
+
+  it('prefers an open stop form, then a trip end being changed', () => {
+    expect(editingFocus(true, edit, 's2')).toEqual({ stopId: 's1' })
+    expect(editingFocus(true, add, 's2')).toEqual({ stopId: 's2' })
+  })
+
+  it('is never set for viewers', () => {
+    expect(editingFocus(false, edit, 's2')).toBeNull()
   })
 })

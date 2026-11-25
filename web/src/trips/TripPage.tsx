@@ -7,7 +7,7 @@ import { defaultDropDay } from './mapAdd'
 import { MapPanel } from './MapPanel'
 import type { StopSelection } from './mapView'
 import { PresenceAvatars } from './PresenceAvatars'
-import type { PresenceFocus } from './presence'
+import { editingFocus } from './presence'
 import { ShareDialog } from './ShareDialog'
 import { StopDialog, type StopDialogMode } from './StopDialog'
 import { TripEndDialog } from './TripEndDialog'
@@ -85,19 +85,10 @@ export function TripPage() {
     const day = summary.days.find((d) => d.dayId === stop?.day_id)
     return stop && day ? { type: 'edit', stop, dayNumber: day.dayNumber } : null
   }, [stopDialog, stops, summary.days])
-  // What others see this user editing: an open stop form (or adding a stop
-  // to a day). Viewers only read, so they never show as editing.
-  const editingStopId =
-    stopDialogMode?.type === 'edit' ? stopDialogMode.stop.id : tripEnd?.stop?.id
-  const addingToDayId =
-    stopDialogMode?.type === 'add' ? stopDialogMode.dayId : undefined
-  const focus = useMemo((): PresenceFocus | null => {
-    if (!canEdit) return null
-    if (editingStopId) return { stopId: editingStopId }
-    if (addingToDayId) return { dayId: addingToDayId }
-    return null
-  }, [canEdit, editingStopId, addingToDayId])
-  const presence = usePresence(trip ? tripId : undefined, focus)
+  const presence = usePresence(
+    trip ? tripId : undefined,
+    editingFocus(canEdit, stopDialogMode, tripEnd?.stop?.id),
+  )
   const selectFromMap = useCallback(
     (stopId: string) => setSelection({ stopId, source: 'map' }),
     [],
