@@ -63,7 +63,7 @@ function ready(): Extract<TripState, { status: 'ready' }> {
 
 describe('tripReducer', () => {
   it('moves through loading, error, not found and loaded', () => {
-    expect(initialTripState).toEqual({ status: 'loading' })
+    expect(initialTripState).toEqual({ status: 'loading', pending: [] })
     expect(
       tripReducer(initialTripState, { type: 'failed', error: 'boom' }),
     ).toEqual({ status: 'error', error: 'boom' })
@@ -73,15 +73,80 @@ describe('tripReducer', () => {
     expect(ready()).toEqual({ status: 'ready', ...data })
     expect(tripReducer(ready(), { type: 'loading' })).toEqual({
       status: 'loading',
+      pending: [],
     })
   })
 
-  it('ignores patches before the trip has loaded', () => {
-    const state = tripReducer(initialTripState, {
+  it('replays patches that arrive while loading', () => {
+    let state: TripState = tripReducer(initialTripState, {
       type: 'upsertStop',
       stop: makeStop('s9', 'd1'),
     })
-    expect(state).toBe(initialTripState)
+    state = tripReducer(state, { type: 'removeStop', id: 's2' })
+    state = tripReducer(state, { type: 'loaded', data })
+    if (state.status !== 'ready') throw new Error('not ready')
+    expect(state.stops.map((s) => s.id)).toEqual(['s1', 's3', 's9'])
+  })
+
+  it('drops buffered patches on reload, error or not found', () => {
+    const buffered = tripReducer(initialTripState, {
+      type: 'removeStop',
+      id: 's1',
+    })
+    expect(tripReducer(buffered, { type: 'loading' })).toEqual(initialTripState)
+    expect(tripReducer(buffered, { type: 'notFound' })).toEqual({
+      status: 'notFound',
+    })
+    const failed = tripReducer(buffered, { type: 'failed', error: 'x' })
+    expect(tripReducer(failed, { type: 'removeStop', id: 's1' })).toBe(failed)
+  })
+
+  it('ignores rows older than the ones it has', () => {
+    const at = (time: string) => `2026-11-25T${time}:00+00:00`
+    const stop = { ...makeStop('s1', 'd1', 'New'), updated_at: at('10:00') }
+    const day = {
+      ...makeDay('d1', 'a0'),
+      notes: 'New',
+      updated_at: at('10:00'),
+    }
+    const start: TripState = {
+      status: 'ready',
+      ...data,
+      trip: { ...trip, name: 'New', updated_at: at('10:00') },
+      days: [day],
+      stops: [stop],
+    }
+    const late = at('09:00')
+    expect(
+      tripReducer(start, {
+        type: 'upsertStop',
+        stop: { ...stop, name: 'Old', updated_at: late },
+      }),
+    ).toBe(start)
+    expect(
+      tripReducer(start, {
+        type: 'upsertDay',
+        day: { ...day, notes: 'Old', updated_at: late },
+      }),
+    ).toBe(start)
+    expect(
+      tripReducer(start, {
+        type: 'updateTrip',
+        trip: { name: 'Old', updated_at: late },
+      }),
+    ).toBe(start)
+
+    // Same or newer versions still apply.
+    const newer = tripReducer(start, {
+      type: 'upsertStop',
+      stop: { ...stop, name: 'Newer', updated_at: at('11:00') },
+    })
+    expect(newer.status === 'ready' && newer.stops[0].name).toBe('Newer')
+    const same = tripReducer(start, {
+      type: 'upsertStop',
+      stop: { ...stop, name: 'Same' },
+    })
+    expect(same.status === 'ready' && same.stops[0].name).toBe('Same')
   })
 
   it('updates trip fields', () => {

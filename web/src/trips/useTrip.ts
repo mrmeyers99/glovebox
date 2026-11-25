@@ -6,7 +6,11 @@ import { initialTripState, tripReducer, type TripAction } from './tripState'
 /**
  * The single source of trip state on the trip page: the trip, its days and
  * stops, and the signed-in user's role. Use `dispatch` to apply local edits
- * or realtime changes without refetching.
+ * or realtime changes without refetching; changes dispatched while loading
+ * are applied once the data arrives.
+ *
+ * `days` and `stops` are unordered. Order them with `orderTrip` (or
+ * `comparePositions`), never `localeCompare`.
  */
 export function useTrip(tripId: string | undefined) {
   const { session } = useAuth()
