@@ -9,7 +9,7 @@ import {
 } from 'react'
 import type { CostCategory, Day, Stop } from '../lib/database.types'
 import { formatMoney, formatTimeOfDay } from '../lib/format'
-import type { Place } from '../lib/geocode'
+import { reverseGeocode, type LatLng, type Place } from '../lib/geocode'
 import { supabase } from '../lib/supabase'
 import {
   canDeleteStop,
@@ -28,12 +28,16 @@ import {
   type StopFormErrors,
   type StopFormInput,
 } from './addStop'
+import { droppedPin, numberedDays, placeAtPoint } from './mapAdd'
 import { PlaceSearchField } from './PlaceSearchField'
 import type { TripAction } from './tripState'
 
-/** Adding a waypoint to a day, or opening an existing stop. */
+/**
+ * Adding a waypoint to a day, or opening an existing stop. A stop added at a
+ * spot picked on the map (`at`) gets a day picker, starting on `dayId`.
+ */
 export type StopDialogMode =
-  | { type: 'add'; dayId: string; dayNumber: number }
+  | { type: 'add'; dayId: string; dayNumber: number; at?: LatLng }
   | { type: 'edit'; stop: Stop; dayNumber: number }
 
 type Props = {
@@ -87,25 +91,71 @@ function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
   const editing = mode.type === 'edit' ? mode.stop : null
   // The stop as it was when opened; saving sends only what changed since.
   const [original] = useState(editing)
-  const dayId = mode.type === 'add' ? mode.dayId : mode.stop.day_id
+  // The spot picked on the map, if any, and its pin until it's looked up.
+  const [at] = useState(() => (mode.type === 'add' ? mode.at : undefined))
+  const [pin] = useState(() => (at ? droppedPin(at) : null))
+  const [chosenDayId, setDayId] = useState(() =>
+    mode.type === 'add' ? mode.dayId : mode.stop.day_id,
+  )
   const [place, setPlace] = useState<Place | null>(() =>
-    editing ? placeFromStop(editing) : null,
+    editing ? placeFromStop(editing) : pin,
   )
   const [input, setInput] = useState<StopFormInput>(() =>
-    editing ? stopFormFromStop(editing) : emptyStopForm,
+    editing
+      ? stopFormFromStop(editing)
+      : { ...emptyStopForm, name: pin?.name ?? '' },
   )
+  const [lookingUp, setLookingUp] = useState(at !== undefined)
+  const [lookupFailed, setLookupFailed] = useState(false)
+  // Set once a place is picked from search, so a slow lookup can't replace it.
+  const picked = useRef(false)
   const [errors, setErrors] = useState<StopFormErrors>({})
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   // Bias search toward where the trip is at that point (or the stop being
-  // edited); fixed while open.
+  // edited, or the spot picked); fixed while open.
   const [focus] = useState(() =>
     editing
       ? { lat: editing.lat, lng: editing.lng }
-      : searchFocus(days, stops, dayId),
+      : (at ?? searchFocus(days, stops, chosenDayId)),
   )
+  const dayChoices = useMemo(() => numberedDays(days), [days])
+  // If a collaborator deletes the chosen day meanwhile, fall back to the last.
+  const dayId =
+    !at || dayChoices.some((d) => d.dayId === chosenDayId)
+      ? chosenDayId
+      : (dayChoices.at(-1)?.dayId ?? chosenDayId)
+
+  // Name the picked spot after the nearest place, keeping it where it was
+  // dropped. Without one (or if the lookup fails) it stays a dropped pin.
+  useEffect(() => {
+    if (!at || !pin) return
+    let active = true
+    reverseGeocode(at).then(
+      (found) => {
+        if (!active) return
+        setLookingUp(false)
+        if (!found || picked.current) return
+        const resolved = placeAtPoint(at, found)
+        setPlace(resolved)
+        setInput((prev) => ({
+          ...prev,
+          name: nameAfterPick(prev.name, pin, resolved),
+        }))
+      },
+      () => {
+        if (!active) return
+        setLookingUp(false)
+        setLookupFailed(true)
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [at, pin])
+
   const dayStops = useMemo(
     () => stops.filter((s) => s.day_id === dayId),
     [stops, dayId],
@@ -116,12 +166,15 @@ function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
     setErrors((prev) => ({ ...prev, [field]: undefined }))
   }
 
-  function pick(picked: Place) {
+  function pick(chosen: Place) {
+    picked.current = true
+    setLookingUp(false)
+    setLookupFailed(false)
     setInput((prev) => ({
       ...prev,
-      name: nameAfterPick(prev.name, place, picked),
+      name: nameAfterPick(prev.name, place, chosen),
     }))
-    setPlace(picked)
+    setPlace(chosen)
     setErrors((prev) => ({ ...prev, place: undefined, name: undefined }))
   }
 
@@ -218,7 +271,9 @@ function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
 
   const title = editing
     ? `Edit ${kindNoun(editing)} on Day ${mode.dayNumber}`
-    : `Add a stop to Day ${mode.dayNumber}`
+    : at
+      ? 'Add a stop here'
+      : `Add a stop to Day ${mode.dayNumber}`
 
   return (
     <form className="dialog-form" noValidate onSubmit={save}>
@@ -229,10 +284,34 @@ function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
         place={place}
         focus={focus}
         error={errors.place}
-        // When editing, details are more often what changes than the place.
-        autoFocus={!editing}
+        // When editing, or adding at a picked spot, the place is already set.
+        autoFocus={!editing && !at}
         onPick={pick}
       />
+      {at && (lookingUp || lookupFailed) && (
+        <p className="field-hint" aria-live="polite">
+          {lookingUp
+            ? 'Looking up this spot…'
+            : "Couldn't look up this spot; it will be saved as a dropped pin."}
+        </p>
+      )}
+
+      {at && (
+        <div className="field">
+          <label htmlFor="stop-day">Day</label>
+          <select
+            id="stop-day"
+            value={dayId}
+            onChange={(e) => setDayId(e.target.value)}
+          >
+            {dayChoices.map((d) => (
+              <option key={d.dayId} value={d.dayId}>
+                Day {d.dayNumber}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="field">
         <label htmlFor={fieldId('name')}>Name</label>
@@ -240,7 +319,7 @@ function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
           {...fieldProps('name')}
           maxLength={MAX_NAME_LENGTH}
           required
-          autoFocus={editing !== null}
+          autoFocus={editing !== null || at !== undefined}
         />
         {fieldError('name')}
       </div>
