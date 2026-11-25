@@ -1,6 +1,7 @@
 // Day list: days in order with their dates, notes, stops and totals. Owners
 // and editors can drag waypoints to reorder them within a day, move them to
-// another day, or drop them on the "+ Day N+1" zone to start a new day.
+// another day, or drop them on the "+ Day N+1" zone to start a new day, and
+// set or change the trip's start and end.
 
 import {
   DndContext,
@@ -55,6 +56,10 @@ import {
   type Placement,
 } from './moveStops'
 import { LegItem, TotalsList, TripTotalsBar } from './RouteTotals'
+import { missingTripEnds, type TripEndKind } from './tripEnds'
+
+/** Opens the form to set the trip's start or end, or change `stop`. */
+export type SetTripEnd = (kind: TripEndKind, stop?: Stop) => void
 
 /** What each draggable stop and drop zone is, on its dnd-kit `data`. */
 type DragData =
@@ -129,6 +134,7 @@ export function DayListPanel({
   onSelectStop,
   onAddStop,
   onMoveStop,
+  onSetTripEnd,
 }: {
   trip: Trip
   days: Day[]
@@ -143,6 +149,11 @@ export function DayListPanel({
   onAddStop?: (day: { dayId: string; dayNumber: number }) => void
   /** Makes waypoints draggable; pass only for owners and editors. */
   onMoveStop?: (stop: Stop, placement: Placement) => void
+  /**
+   * Shows "Set start" / "Set end" prompts while the trip lacks them, and a
+   * Change button on them; pass only for owners and editors.
+   */
+  onSetTripEnd?: SetTripEnd
 }) {
   // Each leg is shown above the stop it arrives at.
   const legsByArrival = useMemo(
@@ -170,6 +181,7 @@ export function DayListPanel({
     [summary.days],
   )
   const newDayNumber = summary.days.length + 1
+  const missingEnds = useMemo(() => missingTripEnds(stops), [stops])
 
   // The stop being dragged, and where it would land.
   const [activeStop, setActiveStop] = useState<Stop | null>(null)
@@ -284,7 +296,7 @@ export function DayListPanel({
         {/* Legs are hidden (keeping their space) while dragging: they'd be
             wrong until the drop, and the stops slide over them. */}
         <ol className="day-list" data-dragging={activeStop ? true : undefined}>
-          {summary.days.map((day) => (
+          {summary.days.map((day, i) => (
             <DayCard
               key={day.dayId}
               summary={day}
@@ -304,6 +316,11 @@ export function DayListPanel({
               onSelectStop={onSelectStop}
               onAddStop={onAddStop}
               canMove={onMoveStop !== undefined}
+              onSetTripEnd={onSetTripEnd}
+              promptStart={i === 0 && missingEnds.has('start')}
+              promptEnd={
+                i === summary.days.length - 1 && missingEnds.has('end')
+              }
             />
           ))}
         </ol>
@@ -356,6 +373,9 @@ function DayCard({
   onSelectStop,
   onAddStop,
   canMove,
+  onSetTripEnd,
+  promptStart,
+  promptEnd,
 }: {
   summary: DaySummary
   notes: string | null
@@ -371,6 +391,11 @@ function DayCard({
   onSelectStop: (stopId: string) => void
   onAddStop?: (day: { dayId: string; dayNumber: number }) => void
   canMove: boolean
+  onSetTripEnd?: SetTripEnd
+  /** This is the first day and the trip has no start. */
+  promptStart: boolean
+  /** This is the last day and the trip has no end. */
+  promptEnd: boolean
 }) {
   const headingId = `day-${summary.dayId}`
   // The whole card is a drop zone, so stops can land on a rest day.
@@ -401,8 +426,14 @@ function DayCard({
       </header>
       {notes && <p className="day-notes">{notes}</p>}
 
+      {onSetTripEnd && promptStart && (
+        <TripEndPrompt kind="start" onSetTripEnd={onSetTripEnd} />
+      )}
+
       {stops.length === 0 ? (
-        <p className="day-rest">Rest day</p>
+        !(onSetTripEnd && (promptStart || promptEnd)) && (
+          <p className="day-rest">Rest day</p>
+        )
       ) : (
         <StopList
           dayId={summary.dayId}
@@ -413,7 +444,12 @@ function DayCard({
           dropTarget={dropTarget?.type === 'stop' ? dropTarget : null}
           onSelectStop={onSelectStop}
           canMove={canMove}
+          onSetTripEnd={onSetTripEnd}
         />
+      )}
+
+      {onSetTripEnd && promptEnd && (
+        <TripEndPrompt kind="end" onSetTripEnd={onSetTripEnd} />
       )}
 
       {onAddStop && (
@@ -437,9 +473,31 @@ function DayCard({
   )
 }
 
+/** Where the trip's start or end will go, until it's set. */
+function TripEndPrompt({
+  kind,
+  onSetTripEnd,
+}: {
+  kind: TripEndKind
+  onSetTripEnd: SetTripEnd
+}) {
+  return (
+    <button
+      type="button"
+      className="trip-end-prompt"
+      data-kind={kind}
+      onClick={() => onSetTripEnd(kind)}
+    >
+      <span className="stop-badge">{KIND_LABELS[kind]}</span>
+      {kind === 'start' ? 'Set start' : 'Set end'}
+    </button>
+  )
+}
+
 /**
  * A day's stops in order, each with the leg arriving at it. With `canMove`,
- * waypoints can be dragged by their handle.
+ * waypoints can be dragged by their handle. With `onSetTripEnd`, the start
+ * and end have a Change button.
  */
 function StopList({
   dayId,
@@ -450,6 +508,7 @@ function StopList({
   dropTarget,
   onSelectStop,
   canMove,
+  onSetTripEnd,
 }: {
   dayId: string
   /** The day's stops in display order. */
@@ -461,6 +520,7 @@ function StopList({
   dropTarget: Extract<DropTarget, { type: 'stop' }> | null
   onSelectStop: (stopId: string) => void
   canMove: boolean
+  onSetTripEnd?: SetTripEnd
 }) {
   const waypointIds = useMemo(
     () => stops.filter((s) => s.kind === 'waypoint').map((s) => s.id),
@@ -469,6 +529,7 @@ function StopList({
 
   const items = stops.map((stop) => {
     const leg = legsByArrival.get(stop.id)
+    const endKind = stop.kind === 'waypoint' ? null : stop.kind
     const selected = selection?.stopId === stop.id
     const props = {
       stop,
@@ -494,7 +555,25 @@ function StopList({
         {canMove && stop.kind === 'waypoint' ? (
           <SortableStopItem {...props} dayId={dayId} />
         ) : (
-          <StopItem {...props} />
+          <StopItem
+            {...props}
+            action={
+              onSetTripEnd && endKind ? (
+                <button
+                  type="button"
+                  className="stop-action"
+                  aria-label={`Change the trip's ${endKind}`}
+                  // Changing the stop shouldn't also select it.
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSetTripEnd(endKind, stop)
+                  }}
+                >
+                  Change
+                </button>
+              ) : undefined
+            }
+          />
         )}
       </Fragment>
     )
@@ -606,6 +685,7 @@ function StopItem({
   placeholder,
   dragging,
   handle,
+  action,
 }: StopItemProps & {
   nodeRef?: (node: HTMLLIElement | null) => void
   style?: CSSProperties
@@ -615,6 +695,8 @@ function StopItem({
   dragging?: boolean
   /** A drag handle, shown before the stop's details. */
   handle?: ReactNode
+  /** A button shown after the stop's name, e.g. to change it. */
+  action?: ReactNode
 }) {
   const kindLabel = stop.kind === 'waypoint' ? null : KIND_LABELS[stop.kind]
   const cost = stop.cost_amount == null ? 0 : Number(stop.cost_amount)
@@ -661,6 +743,7 @@ function StopItem({
               {formatTimeOfDay(stop.arrival_time)}
             </time>
           )}
+          {action}
         </div>
         {stop.address && <p className="stop-address">{stop.address}</p>}
         {/* Skipped stops don't count toward the totals, so don't show a cost. */}
