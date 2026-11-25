@@ -40,7 +40,13 @@ The app calls a function with `supabase.functions.invoke('health')`; supabase-js
 
 ### Secrets
 
-Supabase provides `SUPABASE_URL` and the project's keys to functions automatically. Set third-party keys with the [Supabase CLI](https://supabase.com/docs/guides/cli) (after `supabase login`):
+Supabase provides `SUPABASE_URL` and the project's keys to functions automatically. Third-party keys the functions need:
+
+| Secret        | Used by   | Where to get it                                                                                                  |
+| ------------- | --------- | ---------------------------------------------------------------------------------------------------------------- |
+| `ORS_API_KEY` | `geocode` | Free key from [openrouteservice.org](https://openrouteservice.org) (sign up, then Dashboard → API Keys → Create) |
+
+Without it, `geocode` answers 503 "Place search is not configured". Set them with the [Supabase CLI](https://supabase.com/docs/guides/cli) (after `supabase login`):
 
 ```bash
 supabase secrets set ORS_API_KEY=your-key --remote=<project-id>
