@@ -1,8 +1,16 @@
 // Pure helpers for the map's initial view. Kept free of map-library imports
 // so the trip page can use them without pulling in the map chunk.
 
+// Type-only: erased at build time, so the map chunk stays separate.
+import type { ExpressionSpecification } from 'maplibre-gl'
 import type { Stop, StopKind } from '../lib/database.types'
-import { orderTrip, type DayInput, type StopInput } from '../lib/tripMath'
+import { decodePolyline } from '../lib/polyline'
+import {
+  orderTrip,
+  type DayInput,
+  type StopInput,
+  type TripSummary,
+} from '../lib/tripMath'
 
 /**
  * Map style. OpenFreeMap needs no API key or account; its tiles carry the
@@ -89,11 +97,11 @@ export type StopMarker = {
   dayNumber: number
   colorIndex: number
   /**
-   * 1-based position among the day's active stops, start and end included,
-   * so it matches the order the route visits them. Null for skipped stops,
-   * which aren't on the route.
+   * 1-based position among the trip's active waypoints, counting across days
+   * in the order the route visits them. Null for skipped stops, which aren't
+   * on the route, and for start and end, which show an icon instead.
    */
-  numberInDay: number | null
+  stopNumber: number | null
 }
 
 /**
@@ -108,11 +116,12 @@ export function stopMarkers(
 ): StopMarker[] {
   const active: StopMarker[] = []
   const skipped: StopMarker[] = []
+  let count = 0
   orderTrip(days, stops).forEach(({ stops: dayStops }, i) => {
     const dayNumber = i + 1
-    let count = 0
     for (const stop of dayStops) {
-      if (!stop.skipped) count += 1
+      const numbered = !stop.skipped && stop.kind === 'waypoint'
+      if (numbered) count += 1
       if (stop.skipped && !options.showSkipped) continue
       if (!Number.isFinite(stop.lat) || !Number.isFinite(stop.lng)) continue
       const marker: StopMarker = {
@@ -123,7 +132,7 @@ export function stopMarkers(
         skipped: stop.skipped,
         dayNumber,
         colorIndex: dayColorIndex(dayNumber),
-        numberInDay: stop.skipped ? null : count,
+        stopNumber: numbered ? count : null,
       }
       ;(stop.skipped ? skipped : active).push(marker)
     }
@@ -131,12 +140,12 @@ export function stopMarkers(
   return [...skipped, ...active]
 }
 
-/** Accessible name for a marker, e.g. "Day 2, stop 3: Moab (end)". */
+/** Accessible name for a marker, e.g. "Day 2, stop 3: Moab" or "Day 3: Home (end)". */
 export function markerLabel(marker: StopMarker, name: string): string {
   const where =
-    marker.numberInDay === null
+    marker.stopNumber === null
       ? `Day ${marker.dayNumber}`
-      : `Day ${marker.dayNumber}, stop ${marker.numberInDay}`
+      : `Day ${marker.dayNumber}, stop ${marker.stopNumber}`
   const notes = [
     marker.kind === 'waypoint' ? null : marker.kind,
     marker.skipped ? 'skipped' : null,
@@ -149,3 +158,124 @@ export function markerLabel(marker: StopMarker, name: string): string {
  * follows it (the list scrolls to it, the map pans to it).
  */
 export type StopSelection = { stopId: string; source: 'list' | 'map' }
+
+/** One leg's driving line, as a GeoJSON LineString feature. */
+export type RouteLineFeature = {
+  type: 'Feature'
+  properties: {
+    /** Arrival stop of the leg, which identifies it within the trip. */
+    toStopId: string
+    /** 1-based number of the day the leg counts toward (its arrival stop's). */
+    dayNumber: number
+    colorIndex: number
+  }
+  geometry: { type: 'LineString'; coordinates: [number, number][] }
+}
+
+export type RouteLines = {
+  type: 'FeatureCollection'
+  features: RouteLineFeature[]
+}
+
+/**
+ * Driving lines for the trip's legs, coloured by the day each leg counts
+ * toward. Legs only join active stops (summarizeTrip routes around skipped
+ * ones), so no line touches a skipped stop. Legs without a usable route yet
+ * (pending, failed, zero-length or malformed geometry) are left out.
+ */
+export function routeLines(summary: TripSummary): RouteLines {
+  const dayNumbers = new Map(summary.days.map((d) => [d.dayId, d.dayNumber]))
+  const features: RouteLineFeature[] = []
+  for (const leg of summary.legs) {
+    const encoded = leg.route?.geometry
+    const dayNumber = dayNumbers.get(leg.dayId)
+    if (!encoded || dayNumber === undefined) continue
+    const points = decodePolyline(encoded)
+    if (!points || points.length < 2) continue
+    features.push({
+      type: 'Feature',
+      properties: {
+        toStopId: leg.to.id,
+        dayNumber,
+        colorIndex: dayColorIndex(dayNumber),
+      },
+      // GeoJSON is [lng, lat].
+      geometry: {
+        type: 'LineString',
+        coordinates: points.map(([lat, lng]) => [lng, lat]),
+      },
+    })
+  }
+  return { type: 'FeatureCollection', features }
+}
+
+/** Bounds containing every route line, or null when there are none. */
+export function routeBounds(lines: RouteLines): LngLatBounds | null {
+  let west = Infinity
+  let south = Infinity
+  let east = -Infinity
+  let north = -Infinity
+  for (const feature of lines.features) {
+    for (const [lng, lat] of feature.geometry.coordinates) {
+      west = Math.min(west, lng)
+      east = Math.max(east, lng)
+      south = Math.min(south, lat)
+      north = Math.max(north, lat)
+    }
+  }
+  if (west === Infinity) return null
+  return [
+    [west, south],
+    [east, north],
+  ]
+}
+
+/**
+ * The route is fully loaded once no leg is still waiting for its route and
+ * at least one line can be drawn: the moment to fit the map to it.
+ */
+export function routeReady(summary: TripSummary, lines: RouteLines): boolean {
+  return summary.totals.pendingLegs === 0 && lines.features.length > 0
+}
+
+/**
+ * Day number whose legs to highlight: the day of the selected stop, or null
+ * when nothing is selected (or the stop is gone).
+ */
+export function highlightedDay(
+  summary: TripSummary,
+  selectedStopId: string | null,
+): number | null {
+  if (selectedStopId === null) return null
+  for (const day of summary.days) {
+    if (day.stops.some((s) => s.id === selectedStopId)) return day.dayNumber
+  }
+  return null
+}
+
+const FALLBACK_ROUTE_COLOR = '#888888'
+
+/**
+ * A MapLibre `match` expression picking a feature's colour from its
+ * `colorIndex` property. MapLibre paint can't read CSS variables, so the
+ * palette is resolved from the page's styles first (see useDayPalette).
+ */
+export function dayColorExpression(
+  palette: readonly string[],
+): ExpressionSpecification {
+  // A colour that didn't resolve (styles not loaded) would make MapLibre
+  // reject the whole layer, so fall back to grey.
+  const color = (i: number) => palette[i] || FALLBACK_ROUTE_COLOR
+  const cases = Array.from({ length: DAY_COLOR_COUNT }, (_, i) => [
+    i,
+    color(i),
+  ]).flat()
+  // The spec's tuple type needs at least one literal case, which a spread
+  // can't show the compiler; there are always DAY_COLOR_COUNT cases.
+  return [
+    'match',
+    ['get', 'colorIndex'],
+    ...cases,
+    color(0),
+  ] as unknown as ExpressionSpecification
+}

@@ -1,6 +1,8 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import type { Day, Stop } from '../lib/database.types'
+import type { LatLng } from '../lib/geocode'
+import type { TripSummary } from '../lib/tripMath'
 import type { StopSelection } from './mapView'
 
 // Code-split: the map library is only downloaded on the trip page.
@@ -9,13 +11,19 @@ const TripMap = lazy(() => import('./TripMap'))
 export function MapPanel({
   days,
   stops,
+  summary,
   selection,
   onSelectStop,
+  onAddStopAt,
 }: {
   days: readonly Day[]
   stops: readonly Stop[]
+  /** Legs with their routes, from useTripSummary. */
+  summary: TripSummary
   selection: StopSelection | null
   onSelectStop: (stopId: string) => void
+  /** Owners and editors: add a stop where the map is right-clicked / long-pressed. */
+  onAddStopAt?: (point: LatLng) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const hasSize = useHasSize(ref)
@@ -31,9 +39,11 @@ export function MapPanel({
           <TripMap
             days={days}
             stops={stops}
+            summary={summary}
             showSkipped={showSkipped}
             selection={selection}
             onSelectStop={onSelectStop}
+            onAddStopAt={onAddStopAt}
           />
           <label className="map-toggle">
             <input

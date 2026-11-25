@@ -1,13 +1,19 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import type { Trip } from '../lib/database.types'
-import { AddStopDialog } from './AddStopDialog'
+import type { Stop, Trip } from '../lib/database.types'
+import type { LatLng } from '../lib/geocode'
 import { DayListPanel } from './DayListPanel'
+import { defaultDropDay } from './mapAdd'
 import { MapPanel } from './MapPanel'
 import type { StopSelection } from './mapView'
 import { ShareDialog } from './ShareDialog'
+import { StopDialog, type StopDialogMode } from './StopDialog'
+import { TripEndDialog } from './TripEndDialog'
+import type { TripEndKind } from './tripEnds'
 import { TripSettingsDialog } from './TripSettingsDialog'
+import { useMoveStop } from './useMoveStop'
 import { useTrip } from './useTrip'
+import { useTripSummary } from './useTripSummary'
 
 type View = 'list' | 'map'
 
@@ -25,20 +31,57 @@ export function TripPage() {
     reload,
     dispatch,
   } = useTrip(tripId)
+  const moveStop = useMoveStop(dispatch, days, stops)
+  // Called before the early return below (hooks can't be conditional).
+  const { summary, gasPriceKnown } = useTripSummary(trip, days, stops)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
-  const [addStopDay, setAddStopDay] = useState<{
-    dayId: string
-    dayNumber: number
+  // The stop dialog: adding to a day (optionally at a spot picked on the
+  // map), or the id of the stop opened.
+  const [stopDialog, setStopDialog] = useState<
+    | { type: 'add'; dayId: string; dayNumber: number; at?: LatLng }
+    | { type: 'edit'; stopId: string }
+    | null
+  >(null)
+  // The start or end being set (no stop) or changed.
+  const [tripEnd, setTripEnd] = useState<{
+    kind: TripEndKind
+    stop?: Stop
   } | null>(null)
+  const openTripEnd = useCallback(
+    (kind: TripEndKind, stop?: Stop) => setTripEnd({ kind, stop }),
+    [],
+  )
   // Which panel shows at phone width; desktop shows both.
   const [view, setView] = useState<View>('list')
   // Stop selected in the day list or on the map; the other panel follows.
   const [selection, setSelection] = useState<StopSelection | null>(null)
-  const selectFromList = useCallback(
-    (stopId: string) => setSelection({ stopId, source: 'list' }),
+  // Clicking a stop in the list selects it and opens its details.
+  const selectFromList = useCallback((stopId: string) => {
+    setSelection({ stopId, source: 'list' })
+    setStopDialog({ type: 'edit', stopId })
+  }, [])
+  const openAddStop = useCallback(
+    (day: { dayId: string; dayNumber: number }) =>
+      setStopDialog({ type: 'add', ...day }),
     [],
   )
+  // A spot picked on the map goes to the selected stop's day, else the last.
+  const addStopAt = useCallback(
+    (at: LatLng) => {
+      const day = defaultDropDay(days, stops, selection?.stopId ?? null)
+      if (day) setStopDialog({ type: 'add', ...day, at })
+    },
+    [days, stops, selection],
+  )
+  // Resolved on every render so the dialog follows live changes; it closes
+  // if the stop is deleted meanwhile.
+  const stopDialogMode = useMemo((): StopDialogMode | null => {
+    if (stopDialog?.type !== 'edit') return stopDialog
+    const stop = stops.find((s) => s.id === stopDialog.stopId)
+    const day = summary.days.find((d) => d.dayId === stop?.day_id)
+    return stop && day ? { type: 'edit', stop, dayNumber: day.dayNumber } : null
+  }, [stopDialog, stops, summary.days])
   const selectFromMap = useCallback(
     (stopId: string) => setSelection({ stopId, source: 'map' }),
     [],
@@ -102,13 +145,25 @@ export function TripPage() {
         className="trip-panel trip-panel-list"
         aria-label="Days and stops"
       >
+        {moveStop.error && (
+          <p role="alert" className="error panel-alert">
+            {moveStop.error}{' '}
+            <button type="button" onClick={moveStop.clearError}>
+              Dismiss
+            </button>
+          </p>
+        )}
         <DayListPanel
           trip={trip}
           days={days}
           stops={stops}
+          summary={summary}
+          gasPriceKnown={gasPriceKnown}
           selection={selection}
           onSelectStop={selectFromList}
-          onAddStop={canEdit ? setAddStopDay : undefined}
+          onAddStop={canEdit ? openAddStop : undefined}
+          onMoveStop={canEdit ? moveStop.move : undefined}
+          onSetTripEnd={canEdit ? openTripEnd : undefined}
         />
       </section>
       <section
@@ -119,8 +174,10 @@ export function TripPage() {
         <MapPanel
           days={days}
           stops={stops}
+          summary={summary}
           selection={selection}
           onSelectStop={selectFromMap}
+          onAddStopAt={canEdit && days.length > 0 ? addStopAt : undefined}
         />
       </section>
 
@@ -131,15 +188,34 @@ export function TripPage() {
           onClose={() => setSettingsOpen(false)}
         />
       )}
-      {addStopDay && canEdit && (
-        <AddStopDialog
+      {stopDialogMode && (stopDialogMode.type === 'edit' || canEdit) && (
+        <StopDialog
+          // A fresh form for each stop opened.
+          key={
+            stopDialogMode.type === 'edit'
+              ? stopDialogMode.stop.id
+              : stopDialogMode.at
+                ? `add:${stopDialogMode.at.lat},${stopDialogMode.at.lng}`
+                : `add:${stopDialogMode.dayId}`
+          }
           tripId={trip.id}
-          dayId={addStopDay.dayId}
-          dayNumber={addStopDay.dayNumber}
+          mode={stopDialogMode}
+          canEdit={canEdit}
           days={days}
           stops={stops}
           dispatch={dispatch}
-          onClose={() => setAddStopDay(null)}
+          onClose={() => setStopDialog(null)}
+        />
+      )}
+      {tripEnd && canEdit && (
+        <TripEndDialog
+          tripId={trip.id}
+          kind={tripEnd.kind}
+          stop={tripEnd.stop}
+          days={days}
+          stops={stops}
+          dispatch={dispatch}
+          onClose={() => setTripEnd(null)}
         />
       )}
       {shareOpen && role && (
