@@ -4,12 +4,15 @@ import type { Stop, Trip } from '../lib/database.types'
 import { DayListPanel } from './DayListPanel'
 import { MapPanel } from './MapPanel'
 import type { StopSelection } from './mapView'
+import { PresenceAvatars } from './PresenceAvatars'
+import type { PresenceFocus } from './presence'
 import { ShareDialog } from './ShareDialog'
 import { StopDialog, type StopDialogMode } from './StopDialog'
 import { TripEndDialog } from './TripEndDialog'
 import type { TripEndKind } from './tripEnds'
 import { TripSettingsDialog } from './TripSettingsDialog'
 import { useMoveStop } from './useMoveStop'
+import { usePresence } from './usePresence'
 import { useTrip } from './useTrip'
 import { useTripSummary } from './useTripSummary'
 
@@ -71,6 +74,19 @@ export function TripPage() {
     const day = summary.days.find((d) => d.dayId === stop?.day_id)
     return stop && day ? { type: 'edit', stop, dayNumber: day.dayNumber } : null
   }, [stopDialog, stops, summary.days])
+  // What others see this user editing: an open stop form (or adding a stop
+  // to a day). Viewers only read, so they never show as editing.
+  const editingStopId =
+    stopDialogMode?.type === 'edit' ? stopDialogMode.stop.id : tripEnd?.stop?.id
+  const addingToDayId =
+    stopDialogMode?.type === 'add' ? stopDialogMode.dayId : undefined
+  const focus = useMemo((): PresenceFocus | null => {
+    if (!canEdit) return null
+    if (editingStopId) return { stopId: editingStopId }
+    if (addingToDayId) return { dayId: addingToDayId }
+    return null
+  }, [canEdit, editingStopId, addingToDayId])
+  const presence = usePresence(trip ? tripId : undefined, focus)
   const selectFromMap = useCallback(
     (stopId: string) => setSelection({ stopId, source: 'map' }),
     [],
@@ -110,6 +126,7 @@ export function TripPage() {
           <h1>{trip.name}</h1>
           <TripSummary trip={trip} />
         </div>
+        <PresenceAvatars peers={presence.peers} />
         <button type="button" onClick={() => setShareOpen(true)}>
           Share
         </button>
@@ -153,6 +170,7 @@ export function TripPage() {
           onAddStop={canEdit ? openAddStop : undefined}
           onMoveStop={canEdit ? moveStop.move : undefined}
           onSetTripEnd={canEdit ? openTripEnd : undefined}
+          presence={presence.index}
         />
       </section>
       <section
