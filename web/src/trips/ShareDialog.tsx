@@ -89,6 +89,9 @@ export function ShareDialog({ trip, role, onClose }: Props) {
     setLoaded((prev) =>
       prev ? { ...prev, invites: [...prev.invites, data] } : prev,
     )
+    // Refetch too, to pick up changes others made while the dialog was open
+    // (another owner's invites, accepted invites). The lists stay shown meanwhile.
+    setAttempt((n) => n + 1)
     setEmail('')
     setCopied(false)
     setSentTo(result.email)
