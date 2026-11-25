@@ -1,13 +1,26 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
-import type { Stop } from '../lib/database.types'
+import type { Day, Stop } from '../lib/database.types'
+import type { StopSelection } from './mapView'
 
 // Code-split: the map library is only downloaded on the trip page.
 const TripMap = lazy(() => import('./TripMap'))
 
-export function MapPanel({ stops }: { stops: readonly Stop[] }) {
+export function MapPanel({
+  days,
+  stops,
+  selection,
+  onSelectStop,
+}: {
+  days: readonly Day[]
+  stops: readonly Stop[]
+  selection: StopSelection | null
+  onSelectStop: (stopId: string) => void
+}) {
   const ref = useRef<HTMLDivElement>(null)
   const hasSize = useHasSize(ref)
+  // Skipped stops are off the map unless asked for (as faded markers).
+  const [showSkipped, setShowSkipped] = useState(false)
 
   return (
     <div ref={ref} className="map-panel">
@@ -15,7 +28,21 @@ export function MapPanel({ stops }: { stops: readonly Stop[] }) {
           Wait until it has a size so the initial fit uses real dimensions. */}
       {hasSize && (
         <Suspense fallback={<p className="map-loading">Loading map…</p>}>
-          <TripMap stops={stops} />
+          <TripMap
+            days={days}
+            stops={stops}
+            showSkipped={showSkipped}
+            selection={selection}
+            onSelectStop={onSelectStop}
+          />
+          <label className="map-toggle">
+            <input
+              type="checkbox"
+              checked={showSkipped}
+              onChange={(e) => setShowSkipped(e.target.checked)}
+            />
+            Show skipped
+          </label>
         </Suspense>
       )}
     </div>

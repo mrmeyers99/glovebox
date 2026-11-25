@@ -1,6 +1,6 @@
 // Read-only day list: days in order with their dates, notes, stops and totals.
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { Day, Stop, Trip } from '../lib/database.types'
 import { formatDayDate, formatMoney, formatTimeOfDay } from '../lib/format'
 import {
@@ -11,6 +11,7 @@ import {
 } from '../lib/tripMath'
 import { toDayInput, toStopInput } from '../lib/tripRows'
 import { formatTotals } from './dayTotals'
+import { dayColor, type StopSelection } from './mapView'
 
 // Routes aren't fetched yet (#21), so every leg is pending.
 const noRoutes: RouteLookup = () => undefined
@@ -19,10 +20,14 @@ export function DayListPanel({
   trip,
   days,
   stops,
+  selection,
+  onSelectStop,
 }: {
   trip: Trip
   days: Day[]
   stops: Stop[]
+  selection: StopSelection | null
+  onSelectStop: (stopId: string) => void
 }) {
   const gasPrice =
     trip.gas_price_per_gallon === null
@@ -59,6 +64,8 @@ export function DayListPanel({
           date={dayDate(trip.start_date, day.dayNumber)}
           stopsById={stopsById}
           gasPriceKnown={gasPrice !== null}
+          selection={selection}
+          onSelectStop={onSelectStop}
         />
       ))}
     </ol>
@@ -71,12 +78,16 @@ function DayCard({
   date,
   stopsById,
   gasPriceKnown,
+  selection,
+  onSelectStop,
 }: {
   summary: DaySummary
   notes: string | null
   date: string | null
   stopsById: Map<string, Stop>
   gasPriceKnown: boolean
+  selection: StopSelection | null
+  onSelectStop: (stopId: string) => void
 }) {
   const totals = formatTotals(summary, { gasPriceKnown })
   const headingId = `day-${summary.dayId}`
@@ -84,7 +95,15 @@ function DayCard({
   return (
     <li className="day-card" aria-labelledby={headingId}>
       <header className="day-header">
-        <h2 id={headingId}>Day {summary.dayNumber}</h2>
+        <h2 id={headingId}>
+          {/* Matches this day's markers on the map. */}
+          <span
+            className="day-swatch"
+            aria-hidden="true"
+            style={{ background: dayColor(summary.dayNumber) }}
+          />
+          Day {summary.dayNumber}
+        </h2>
         {date && <time dateTime={date}>{formatDayDate(date)}</time>}
       </header>
       {notes && <p className="day-notes">{notes}</p>}
@@ -95,7 +114,21 @@ function DayCard({
         <ol className="stop-list">
           {summary.stops.map((input) => {
             const stop = stopsById.get(input.id)
-            return stop && <StopItem key={stop.id} stop={stop} />
+            const selected = selection?.stopId === input.id
+            return (
+              stop && (
+                <StopItem
+                  key={stop.id}
+                  stop={stop}
+                  selected={selected}
+                  // Scroll to stops picked on the map, not ones clicked here.
+                  scrollTo={
+                    selected && selection.source === 'map' ? selection : null
+                  }
+                  onSelect={onSelectStop}
+                />
+              )
+            )
           })}
         </ol>
       )}
@@ -126,24 +159,44 @@ function DayCard({
 
 const KIND_LABELS = { start: 'Start', end: 'End' } as const
 
-function StopItem({ stop }: { stop: Stop }) {
+function StopItem({
+  stop,
+  selected,
+  scrollTo,
+  onSelect,
+}: {
+  stop: Stop
+  selected: boolean
+  /** Set (a new object each time) when the list should scroll to this stop. */
+  scrollTo: StopSelection | null
+  onSelect: (stopId: string) => void
+}) {
   const kindLabel = stop.kind === 'waypoint' ? null : KIND_LABELS[stop.kind]
   const cost = stop.cost_amount == null ? 0 : Number(stop.cost_amount)
+  const ref = useRef<HTMLLIElement>(null)
+
+  useEffect(() => {
+    if (scrollTo) ref.current?.scrollIntoView({ block: 'nearest' })
+  }, [scrollTo])
 
   return (
     <li
+      ref={ref}
       className="stop"
       data-kind={stop.kind}
       data-skipped={stop.skipped || undefined}
+      data-selected={selected || undefined}
+      // The whole row is clickable; the name is a button for keyboard users.
+      onClick={() => onSelect(stop.id)}
     >
       <div className="stop-main">
-        <span className="stop-name">
+        <button type="button" className="stop-name" aria-pressed={selected}>
           {kindLabel && <span className="stop-badge">{kindLabel}</span>}
           {stop.skipped && (
             <span className="stop-badge stop-badge-skipped">Skipped</span>
           )}
           {stop.name}
-        </span>
+        </button>
         {stop.arrival_time && (
           <time className="stop-arrival" dateTime={stop.arrival_time}>
             {formatTimeOfDay(stop.arrival_time)}

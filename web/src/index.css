@@ -7,6 +7,19 @@
   --accent-fg: #ffffff;
   --error: #b42318;
 
+  /* Day colours for map markers, cycling (DAY_COLOR_COUNT in mapView.ts).
+     Light mode: deep fills under white text. */
+  --day-color-1: #2563c9;
+  --day-color-2: #c2410c;
+  --day-color-3: #15803d;
+  --day-color-4: #9333ea;
+  --day-color-5: #be123c;
+  --day-color-6: #0e7490;
+  --day-color-7: #a16207;
+  --day-color-8: #4338ca;
+  --marker-fg: #ffffff;
+  --marker-ring: #ffffff;
+
   color-scheme: light dark;
   font-family:
     system-ui,
@@ -28,6 +41,18 @@
     --accent: #e0825a;
     --accent-fg: #17191c;
     --error: #ff8a80;
+
+    /* Dark mode: light fills under dark text, with a dark ring. */
+    --day-color-1: #7cb0ff;
+    --day-color-2: #fb923c;
+    --day-color-3: #4ade80;
+    --day-color-4: #c084fc;
+    --day-color-5: #fb7185;
+    --day-color-6: #22d3ee;
+    --day-color-7: #facc15;
+    --day-color-8: #a5b4fc;
+    --marker-fg: #17191c;
+    --marker-ring: #17191c;
   }
 }
 
@@ -307,6 +332,7 @@ button:disabled {
   padding: 0.5rem 0;
   border-top: 1px solid var(--border);
   min-width: 0;
+  cursor: pointer;
 }
 
 .stop-main {
@@ -316,9 +342,33 @@ button:disabled {
   gap: 0.5rem;
 }
 
+.stop[data-selected] {
+  margin: 0 -0.5rem;
+  padding-inline: 0.5rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* A button for keyboard selection, styled as the stop's name. */
 .stop-name {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
   font-weight: 600;
+  text-align: start;
+  cursor: pointer;
   overflow-wrap: anywhere;
+}
+
+.day-swatch {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-right: 0.375rem;
+  border-radius: 50%;
+  vertical-align: -0.05em;
 }
 
 .stop-arrival {
@@ -379,6 +429,71 @@ button:disabled {
 .map-panel {
   position: relative;
   height: 100%;
+}
+
+.map-toggle {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+/* Stop markers: a circle filled with the day's colour, showing the stop's
+   number in its day; start and end are squares with an icon. */
+.stop-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 2px solid var(--marker-ring);
+  border-radius: 50%;
+  background: var(--marker-color);
+  color: var(--marker-fg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.4);
+  font:
+    700 0.8125rem/1 system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.stop-marker svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.stop-marker[data-kind='start'],
+.stop-marker[data-kind='end'] {
+  border-radius: 6px;
+}
+
+.stop-marker[data-skipped] {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-style: dashed;
+  opacity: 0.45;
+}
+
+.stop-marker[aria-pressed='true'] {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+  transform: scale(1.2);
+}
+
+.stop-marker[data-skipped][aria-pressed='true'] {
+  opacity: 0.8;
 }
 
 .map-loading {

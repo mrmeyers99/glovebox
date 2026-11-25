@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { Trip } from '../lib/database.types'
 import { DayListPanel } from './DayListPanel'
 import { MapPanel } from './MapPanel'
+import type { StopSelection } from './mapView'
 import { ShareDialog } from './ShareDialog'
 import { TripSettingsDialog } from './TripSettingsDialog'
 import { useTrip } from './useTrip'
@@ -27,6 +28,16 @@ export function TripPage() {
   const [shareOpen, setShareOpen] = useState(false)
   // Which panel shows at phone width; desktop shows both.
   const [view, setView] = useState<View>('list')
+  // Stop selected in the day list or on the map; the other panel follows.
+  const [selection, setSelection] = useState<StopSelection | null>(null)
+  const selectFromList = useCallback(
+    (stopId: string) => setSelection({ stopId, source: 'list' }),
+    [],
+  )
+  const selectFromMap = useCallback(
+    (stopId: string) => setSelection({ stopId, source: 'map' }),
+    [],
+  )
 
   if (!trip) {
     return (
@@ -86,14 +97,25 @@ export function TripPage() {
         className="trip-panel trip-panel-list"
         aria-label="Days and stops"
       >
-        <DayListPanel trip={trip} days={days} stops={stops} />
+        <DayListPanel
+          trip={trip}
+          days={days}
+          stops={stops}
+          selection={selection}
+          onSelectStop={selectFromList}
+        />
       </section>
       <section
         id="trip-panel-map"
         className="trip-panel trip-panel-map"
         aria-label="Map"
       >
-        <MapPanel stops={stops} />
+        <MapPanel
+          days={days}
+          stops={stops}
+          selection={selection}
+          onSelectStop={selectFromMap}
+        />
       </section>
 
       {settingsOpen && (
