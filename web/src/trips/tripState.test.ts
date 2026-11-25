@@ -70,7 +70,7 @@ describe('tripReducer', () => {
     expect(tripReducer(initialTripState, { type: 'notFound' })).toEqual({
       status: 'notFound',
     })
-    expect(ready()).toEqual({ status: 'ready', ...data })
+    expect(ready()).toEqual({ status: 'ready', removedIds: new Set(), ...data })
     expect(tripReducer(ready(), { type: 'loading' })).toEqual({
       status: 'loading',
       pending: [],
@@ -111,6 +111,7 @@ describe('tripReducer', () => {
     }
     const start: TripState = {
       status: 'ready',
+      removedIds: new Set(),
       ...data,
       trip: { ...trip, name: 'New', updated_at: at('10:00') },
       days: [day],
@@ -175,14 +176,38 @@ describe('tripReducer', () => {
     expect(state.stops[0]).toMatchObject({ day_id: 'd2', name: 'Moved' })
   })
 
-  it('removes a stop, and is a no-op for unknown ids', () => {
-    const start = ready()
-    const state = tripReducer(start, { type: 'removeStop', id: 's2' })
+  it('removes a stop', () => {
+    const state = tripReducer(ready(), { type: 'removeStop', id: 's2' })
     expect(state.status === 'ready' && state.stops.map((s) => s.id)).toEqual([
       's1',
       's3',
     ])
-    expect(tripReducer(start, { type: 'removeStop', id: 'nope' })).toBe(start)
+  })
+
+  it("doesn't bring back a removed stop on a late upsert", () => {
+    let state = tripReducer(ready(), { type: 'removeStop', id: 's2' })
+    state = tripReducer(state, {
+      type: 'upsertStop',
+      stop: makeStop('s2', 'd2', 'Late edit'),
+    })
+    expect(state.status === 'ready' && state.stops.map((s) => s.id)).toEqual([
+      's1',
+      's3',
+    ])
+  })
+
+  it('remembers a removal even if the row was already gone', () => {
+    // E.g. the delete was buffered and the snapshot already excluded it.
+    let state = tripReducer(ready(), { type: 'removeStop', id: 's9' })
+    state = tripReducer(state, {
+      type: 'upsertStop',
+      stop: makeStop('s9', 'd1'),
+    })
+    expect(state.status === 'ready' && state.stops.map((s) => s.id)).toEqual([
+      's1',
+      's2',
+      's3',
+    ])
   })
 
   it('inserts and replaces days by id', () => {
@@ -201,6 +226,23 @@ describe('tripReducer', () => {
 
   it('removes a day along with its stops', () => {
     const state = tripReducer(ready(), { type: 'removeDay', id: 'd2' })
+    if (state.status !== 'ready') throw new Error('not ready')
+    expect(state.days.map((d) => d.id)).toEqual(['d1'])
+    expect(state.stops.map((s) => s.id)).toEqual(['s1'])
+  })
+
+  it("doesn't bring back a removed day or its stops on a late upsert", () => {
+    let state = tripReducer(ready(), { type: 'removeDay', id: 'd2' })
+    state = tripReducer(state, { type: 'upsertDay', day: makeDay('d2', 'a1') })
+    state = tripReducer(state, {
+      type: 'upsertStop',
+      stop: makeStop('s2', 'd2'),
+    })
+    // A stop the client never saw, on the removed day.
+    state = tripReducer(state, {
+      type: 'upsertStop',
+      stop: makeStop('s8', 'd2'),
+    })
     if (state.status !== 'ready') throw new Error('not ready')
     expect(state.days.map((d) => d.id)).toEqual(['d1'])
     expect(state.stops.map((s) => s.id)).toEqual(['s1'])
