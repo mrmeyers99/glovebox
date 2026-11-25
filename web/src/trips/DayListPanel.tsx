@@ -1,18 +1,26 @@
 // Day list: days in order with their dates, notes, stops and totals. Owners
-// and editors can drag waypoints to reorder them within a day.
+// and editors can drag waypoints to reorder them within a day, move them to
+// another day, or drop them on the "+ Day N+1" zone to start a new day.
 
 import {
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   MouseSensor,
   TouchSensor,
   closestCenter,
+  pointerWithin,
+  rectIntersection,
+  useDroppable,
   useSensor,
   useSensors,
+  type Active,
   type Announcements,
+  type CollisionDetection,
   type DragEndEvent,
+  type DragMoveEvent,
   type Modifier,
-  type UniqueIdentifier,
+  type Over,
 } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -40,9 +48,77 @@ import {
   type TripSummary,
 } from '../lib/tripMath'
 import { dayColor, type StopSelection } from './mapView'
-import { reorderAnnouncements, reorderedPosition } from './reorderStops'
+import {
+  dropPlacement,
+  moveAnnouncements,
+  type DropTarget,
+  type Placement,
+} from './moveStops'
 import { LegItem, TotalsList, TripTotalsBar } from './RouteTotals'
 
+/** What each draggable stop and drop zone is, on its dnd-kit `data`. */
+type DragData =
+  | { type: 'stop'; dayId: string }
+  | { type: 'day'; dayId: string }
+  | { type: 'newDay' }
+
+const NEW_DAY_ID = 'new-day'
+
+function dragData(item: { data: { current?: unknown } } | null | undefined) {
+  return item?.data.current as DragData | undefined
+}
+
+/**
+ * Prefer the "+ Day N+1" zone or the day under the pointer (with the
+ * keyboard, the day the dragged stop overlaps most), then the closest stop
+ * on that day. A day with no waypoints is a target itself.
+ */
+const collisionDetection: CollisionDetection = (args) => {
+  const pointer = pointerWithin(args)
+  const hits = pointer.length > 0 ? pointer : rectIntersection(args)
+  const containers = args.droppableContainers
+  for (const hit of hits) {
+    const data = dragData(containers.find((c) => c.id === hit.id))
+    if (data?.type === 'newDay') return [hit]
+    if (data?.type === 'day') {
+      const dayStops = containers.filter((c) => {
+        const d = dragData(c)
+        return d?.type === 'stop' && d.dayId === data.dayId
+      })
+      return dayStops.length > 0
+        ? closestCenter({ ...args, droppableContainers: dayStops })
+        : [hit]
+    }
+  }
+  return []
+}
+
+/** Where the dragged stop would land if dropped now. */
+function dropTargetOf(active: Active, over: Over | null): DropTarget | null {
+  const data = dragData(over)
+  if (!over || !data) return null
+  if (data.type === 'newDay') return { type: 'newDay' }
+  if (data.type === 'day') return { type: 'day', dayId: data.dayId }
+  // Over the lower half of a stop means after it.
+  const rect = active.rect.current.translated
+  const after =
+    rect !== null &&
+    rect.top + rect.height / 2 > over.rect.top + over.rect.height / 2
+  return { type: 'stop', dayId: data.dayId, stopId: String(over.id), after }
+}
+
+function sameTarget(a: DropTarget | null, b: DropTarget | null) {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+// Days are stacked, so dragging only moves stops up and down.
+const verticalOnly: Modifier = ({ transform }) => ({ ...transform, x: 0 })
+
+/**
+ * With `onMoveStop`, waypoints can be dragged by their handle: with a mouse,
+ * a touch press-and-hold (so a plain swipe still scrolls), or the keyboard
+ * (Space or Enter on the handle, arrows, Space or Enter again).
+ */
 export function DayListPanel({
   trip,
   days,
@@ -66,7 +142,7 @@ export function DayListPanel({
   /** Shows an Add stop button on each day; pass only for owners and editors. */
   onAddStop?: (day: { dayId: string; dayNumber: number }) => void
   /** Makes waypoints draggable; pass only for owners and editors. */
-  onMoveStop?: (stop: Stop, position: string) => void
+  onMoveStop?: (stop: Stop, placement: Placement) => void
 }) {
   // Each leg is shown above the stop it arrives at.
   const legsByArrival = useMemo(
@@ -75,6 +151,102 @@ export function DayListPanel({
   )
   const daysById = useMemo(() => new Map(days.map((d) => [d.id, d])), [days])
   const stopsById = useMemo(() => new Map(stops.map((s) => [s.id, s])), [stops])
+  // Each day's stops in display order, and its number.
+  const stopsByDay = useMemo(
+    () =>
+      new Map(
+        summary.days.map((day) => [
+          day.dayId,
+          day.stops.flatMap((input) => {
+            const stop = stopsById.get(input.id)
+            return stop ? [stop] : []
+          }),
+        ]),
+      ),
+    [summary.days, stopsById],
+  )
+  const dayNumbers = useMemo(
+    () => new Map(summary.days.map((d) => [d.dayId, d.dayNumber])),
+    [summary.days],
+  )
+  const newDayNumber = summary.days.length + 1
+
+  // The stop being dragged, and where it would land.
+  const [activeStop, setActiveStop] = useState<Stop | null>(null)
+  const [target, setTarget] = useState<DropTarget | null>(null)
+  const sensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 8 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  )
+
+  const announcements = useMemo((): Announcements => {
+    const name = (id: string) => stopsById.get(id)?.name ?? ''
+    // Where a stop on `dayId` is, among that day's waypoints.
+    const positionOnDay = (dayId: string, stopId: string) => {
+      const waypoints = (stopsByDay.get(dayId) ?? []).filter(
+        (s) => s.kind === 'waypoint',
+      )
+      const i = waypoints.findIndex((s) => s.id === stopId)
+      return i === -1
+        ? null
+        : `position ${i + 1} of ${waypoints.length} on Day ${dayNumbers.get(dayId)}`
+    }
+    const where = (active: Active, over: Over | null) => {
+      const t = dropTargetOf(active, over)
+      if (!t) return null
+      if (t.type === 'newDay') return `a new Day ${newDayNumber}`
+      if (t.type === 'day') return `the end of Day ${dayNumbers.get(t.dayId)}`
+      if (stopsById.get(String(active.id))?.day_id === t.dayId)
+        return positionOnDay(t.dayId, t.stopId)
+      return `Day ${dayNumbers.get(t.dayId)}, ${t.after ? 'after' : 'before'} ${name(t.stopId)}`
+    }
+    return {
+      onDragStart: ({ active }) => {
+        const stop = stopsById.get(String(active.id))
+        return moveAnnouncements.start(
+          name(String(active.id)),
+          (stop && positionOnDay(stop.day_id, stop.id)) ?? '',
+        )
+      },
+      onDragOver: ({ active, over }) =>
+        moveAnnouncements.over(name(String(active.id)), where(active, over)),
+      onDragEnd: ({ active, over }) =>
+        moveAnnouncements.end(name(String(active.id)), where(active, over)),
+      onDragCancel: ({ active }) =>
+        moveAnnouncements.cancel(name(String(active.id))),
+    }
+  }, [stopsById, stopsByDay, dayNumbers, newDayNumber])
+
+  const onDragMove = useCallback(({ active, over }: DragMoveEvent) => {
+    const next = dropTargetOf(active, over)
+    setTarget((current) => (sameTarget(current, next) ? current : next))
+  }, [])
+
+  const endDrag = useCallback(() => {
+    setActiveStop(null)
+    setTarget(null)
+  }, [])
+
+  const onDragEnd = useCallback(
+    ({ active, over }: DragEndEvent) => {
+      endDrag()
+      const stop = stopsById.get(String(active.id))
+      const dropTarget = dropTargetOf(active, over)
+      if (!stop || !dropTarget || !onMoveStop) return
+      const placement = dropPlacement(
+        (dayId) => stopsByDay.get(dayId) ?? [],
+        stop,
+        dropTarget,
+      )
+      if (placement) onMoveStop(stop, placement)
+    },
+    [stopsById, stopsByDay, onMoveStop, endDrag],
+  )
 
   if (summary.days.length === 0) {
     return (
@@ -84,27 +256,90 @@ export function DayListPanel({
     )
   }
 
+  // Drops within the stop's own day show as the list rearranging; drops
+  // elsewhere are highlighted on the target.
+  const crossDayTarget =
+    activeStop &&
+    target &&
+    !(target.type !== 'newDay' && target.dayId === activeStop.day_id)
+      ? target
+      : null
+
   return (
     <>
       <TripTotalsBar totals={summary.totals} gasPriceKnown={gasPriceKnown} />
-      <ol className="day-list">
-        {summary.days.map((day) => (
-          <DayCard
-            key={day.dayId}
-            summary={day}
-            notes={daysById.get(day.dayId)?.notes ?? null}
-            date={dayDate(trip.start_date, day.dayNumber)}
-            stopsById={stopsById}
-            legsByArrival={legsByArrival}
-            gasPriceKnown={gasPriceKnown}
-            selection={selection}
-            onSelectStop={onSelectStop}
-            onAddStop={onAddStop}
-            onMoveStop={onMoveStop}
-          />
-        ))}
-      </ol>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={collisionDetection}
+        modifiers={[verticalOnly]}
+        accessibility={{ announcements }}
+        onDragStart={({ active }) =>
+          setActiveStop(stopsById.get(String(active.id)) ?? null)
+        }
+        onDragMove={onDragMove}
+        onDragOver={onDragMove}
+        onDragCancel={endDrag}
+        onDragEnd={onDragEnd}
+      >
+        {/* Legs are hidden (keeping their space) while dragging: they'd be
+            wrong until the drop, and the stops slide over them. */}
+        <ol className="day-list" data-dragging={activeStop ? true : undefined}>
+          {summary.days.map((day) => (
+            <DayCard
+              key={day.dayId}
+              summary={day}
+              notes={daysById.get(day.dayId)?.notes ?? null}
+              date={dayDate(trip.start_date, day.dayNumber)}
+              stops={stopsByDay.get(day.dayId) ?? []}
+              stopsById={stopsById}
+              legsByArrival={legsByArrival}
+              gasPriceKnown={gasPriceKnown}
+              selection={selection}
+              dropTarget={
+                crossDayTarget?.type !== 'newDay' &&
+                crossDayTarget?.dayId === day.dayId
+                  ? crossDayTarget
+                  : null
+              }
+              onSelectStop={onSelectStop}
+              onAddStop={onAddStop}
+              canMove={onMoveStop !== undefined}
+            />
+          ))}
+        </ol>
+        <DragOverlay dropAnimation={null}>
+          {activeStop && <DraggedStop stop={activeStop} />}
+        </DragOverlay>
+        {onMoveStop && (
+          <NewDayZone dayNumber={newDayNumber} dragging={activeStop !== null} />
+        )}
+      </DndContext>
     </>
+  )
+}
+
+/** Drop a stop here to add a day after the last one and move it there. */
+function NewDayZone({
+  dayNumber,
+  dragging,
+}: {
+  dayNumber: number
+  dragging: boolean
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: NEW_DAY_ID,
+    data: { type: 'newDay' } satisfies DragData,
+  })
+  return (
+    <div
+      ref={setNodeRef}
+      className="day-new"
+      data-dragging={dragging || undefined}
+      data-over={isOver || undefined}
+    >
+      <span className="day-new-label">+ Day {dayNumber}</span>
+      <span className="day-new-hint">Drag a stop here to start a new day</span>
+    </div>
   )
 }
 
@@ -112,29 +347,46 @@ function DayCard({
   summary,
   notes,
   date,
+  stops,
   stopsById,
   legsByArrival,
   gasPriceKnown,
   selection,
+  dropTarget,
   onSelectStop,
   onAddStop,
-  onMoveStop,
+  canMove,
 }: {
   summary: DaySummary
   notes: string | null
   date: string | null
+  /** The day's stops in display order. */
+  stops: Stop[]
   stopsById: Map<string, Stop>
   legsByArrival: Map<string, Leg>
   gasPriceKnown: boolean
   selection: StopSelection | null
+  /** Set while a stop from another day is dragged over this one. */
+  dropTarget: Exclude<DropTarget, { type: 'newDay' }> | null
   onSelectStop: (stopId: string) => void
   onAddStop?: (day: { dayId: string; dayNumber: number }) => void
-  onMoveStop?: (stop: Stop, position: string) => void
+  canMove: boolean
 }) {
   const headingId = `day-${summary.dayId}`
+  // The whole card is a drop zone, so stops can land on a rest day.
+  const { setNodeRef } = useDroppable({
+    id: `day:${summary.dayId}`,
+    data: { type: 'day', dayId: summary.dayId } satisfies DragData,
+    disabled: !canMove,
+  })
 
   return (
-    <li className="day-card" aria-labelledby={headingId}>
+    <li
+      ref={setNodeRef}
+      className="day-card"
+      aria-labelledby={headingId}
+      data-drop-target={dropTarget ? true : undefined}
+    >
       <header className="day-header">
         <h2 id={headingId}>
           {/* Matches this day's markers on the map. */}
@@ -149,19 +401,18 @@ function DayCard({
       </header>
       {notes && <p className="day-notes">{notes}</p>}
 
-      {summary.stops.length === 0 ? (
+      {stops.length === 0 ? (
         <p className="day-rest">Rest day</p>
       ) : (
         <StopList
-          stops={summary.stops.flatMap((input) => {
-            const stop = stopsById.get(input.id)
-            return stop ? [stop] : []
-          })}
+          dayId={summary.dayId}
+          stops={stops}
           stopsById={stopsById}
           legsByArrival={legsByArrival}
           selection={selection}
+          dropTarget={dropTarget?.type === 'stop' ? dropTarget : null}
           onSelectStop={onSelectStop}
-          onMoveStop={onMoveStop}
+          canMove={canMove}
         />
       )}
 
@@ -186,79 +437,34 @@ function DayCard({
   )
 }
 
-// Dragging only moves stops up and down.
-const verticalOnly: Modifier = ({ transform }) => ({ ...transform, x: 0 })
-
 /**
- * A day's stops in order, each with the leg arriving at it. With
- * `onMoveStop`, waypoints can be dragged by their handle to reorder them:
- * with a mouse, a touch press-and-hold (so a plain swipe still scrolls), or
- * the keyboard (Space or Enter on the handle, arrows, Space or Enter again).
+ * A day's stops in order, each with the leg arriving at it. With `canMove`,
+ * waypoints can be dragged by their handle.
  */
 function StopList({
+  dayId,
   stops,
   stopsById,
   legsByArrival,
   selection,
+  dropTarget,
   onSelectStop,
-  onMoveStop,
+  canMove,
 }: {
+  dayId: string
   /** The day's stops in display order. */
   stops: Stop[]
   stopsById: Map<string, Stop>
   legsByArrival: Map<string, Leg>
   selection: StopSelection | null
+  /** Set while a stop from another day is dragged over one of these. */
+  dropTarget: Extract<DropTarget, { type: 'stop' }> | null
   onSelectStop: (stopId: string) => void
-  onMoveStop?: (stop: Stop, position: string) => void
+  canMove: boolean
 }) {
-  const [dragging, setDragging] = useState(false)
-  const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 250, tolerance: 8 },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  )
   const waypointIds = useMemo(
     () => stops.filter((s) => s.kind === 'waypoint').map((s) => s.id),
     [stops],
-  )
-  const sortable = onMoveStop !== undefined && waypointIds.length > 1
-
-  const announcements = useMemo((): Announcements => {
-    const name = (id: UniqueIdentifier) => stopsById.get(String(id))?.name ?? ''
-    const index = (id: UniqueIdentifier | undefined) => {
-      const i = id === undefined ? -1 : waypointIds.indexOf(String(id))
-      return i === -1 ? null : i
-    }
-    const count = waypointIds.length
-    return {
-      onDragStart: ({ active }) =>
-        reorderAnnouncements.start(name(active.id), index(active.id)!, count),
-      onDragOver: ({ active, over }) =>
-        reorderAnnouncements.over(name(active.id), index(over?.id), count),
-      onDragEnd: ({ active, over }) =>
-        reorderAnnouncements.end(name(active.id), index(over?.id), count),
-      onDragCancel: ({ active }) =>
-        reorderAnnouncements.cancel(name(active.id)),
-    }
-  }, [stopsById, waypointIds])
-
-  const onDragEnd = useCallback(
-    ({ active, over }: DragEndEvent) => {
-      setDragging(false)
-      if (!over || !onMoveStop) return
-      const stop = stopsById.get(String(active.id))
-      const position = reorderedPosition(
-        stops,
-        String(active.id),
-        String(over.id),
-      )
-      if (stop && position !== null) onMoveStop(stop, position)
-    },
-    [stops, stopsById, onMoveStop],
   )
 
   const items = stops.map((stop) => {
@@ -269,6 +475,12 @@ function StopList({
       selected,
       // Scroll to stops picked on the map, not ones clicked here.
       scrollTo: selected && selection.source === 'map' ? selection : null,
+      dropSide:
+        dropTarget?.stopId === stop.id
+          ? dropTarget.after
+            ? ('after' as const)
+            : ('before' as const)
+          : undefined,
       onSelect: onSelectStop,
     }
     return (
@@ -279,8 +491,8 @@ function StopList({
             fromName={stopsById.get(leg.from.id)?.name ?? ''}
           />
         )}
-        {sortable && stop.kind === 'waypoint' ? (
-          <SortableStopItem {...props} />
+        {canMove && stop.kind === 'waypoint' ? (
+          <SortableStopItem {...props} dayId={dayId} />
         ) : (
           <StopItem {...props} />
         )}
@@ -288,29 +500,12 @@ function StopList({
     )
   })
 
-  if (!sortable) return <ol className="stop-list">{items}</ol>
+  if (!canMove) return <ol className="stop-list">{items}</ol>
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      modifiers={[verticalOnly]}
-      accessibility={{ announcements }}
-      onDragStart={() => setDragging(true)}
-      onDragCancel={() => setDragging(false)}
-      onDragEnd={onDragEnd}
-    >
-      <SortableContext
-        items={waypointIds}
-        strategy={verticalListSortingStrategy}
-      >
-        {/* Legs are hidden (keeping their space) while dragging: they'd be
-            wrong until the drop, and the stops slide over them. */}
-        <ol className="stop-list" data-dragging={dragging || undefined}>
-          {items}
-        </ol>
-      </SortableContext>
-    </DndContext>
+    <SortableContext items={waypointIds} strategy={verticalListSortingStrategy}>
+      <ol className="stop-list">{items}</ol>
+    </SortableContext>
   )
 }
 
@@ -319,10 +514,15 @@ type StopItemProps = {
   selected: boolean
   /** Set (a new object each time) when the list should scroll to this stop. */
   scrollTo: StopSelection | null
+  /** Where a stop dragged from another day would land, next to this one. */
+  dropSide?: 'before' | 'after'
   onSelect: (stopId: string) => void
 }
 
-function SortableStopItem(props: StopItemProps) {
+function SortableStopItem({
+  dayId,
+  ...props
+}: StopItemProps & { dayId: string }) {
   const {
     attributes,
     listeners,
@@ -331,14 +531,17 @@ function SortableStopItem(props: StopItemProps) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: props.stop.id })
+  } = useSortable({
+    id: props.stop.id,
+    data: { type: 'stop', dayId } satisfies DragData,
+  })
 
   return (
     <StopItem
       {...props}
       nodeRef={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      dragging={isDragging}
+      placeholder={isDragging}
       handle={
         <button
           type="button"
@@ -346,21 +549,47 @@ function SortableStopItem(props: StopItemProps) {
           className="stop-handle"
           {...attributes}
           {...listeners}
-          aria-label={`Reorder ${props.stop.name}`}
+          aria-label={`Move ${props.stop.name}`}
           // Dragging by the handle shouldn't also select the stop.
           onClick={(e) => e.stopPropagation()}
         >
-          <svg viewBox="0 0 10 16" width="10" height="16" aria-hidden="true">
-            {[3, 8, 13].map((y) => (
-              <Fragment key={y}>
-                <circle cx="2.5" cy={y} r="1.5" />
-                <circle cx="7.5" cy={y} r="1.5" />
-              </Fragment>
-            ))}
-          </svg>
+          <GripIcon />
         </button>
       }
     />
+  )
+}
+
+function GripIcon() {
+  return (
+    <svg viewBox="0 0 10 16" width="10" height="16" aria-hidden="true">
+      {[3, 8, 13].map((y) => (
+        <Fragment key={y}>
+          <circle cx="2.5" cy={y} r="1.5" />
+          <circle cx="7.5" cy={y} r="1.5" />
+        </Fragment>
+      ))}
+    </svg>
+  )
+}
+
+/** The stop being dragged, following the pointer across days. */
+function DraggedStop({ stop }: { stop: Stop }) {
+  return (
+    <ol className="stop-list">
+      <StopItem
+        stop={stop}
+        selected={false}
+        scrollTo={null}
+        onSelect={() => {}}
+        dragging
+        handle={
+          <span className="stop-handle">
+            <GripIcon />
+          </span>
+        }
+      />
+    </ol>
   )
 }
 
@@ -370,14 +599,19 @@ function StopItem({
   stop,
   selected,
   scrollTo,
+  dropSide,
   onSelect,
   nodeRef,
   style,
+  placeholder,
   dragging,
   handle,
 }: StopItemProps & {
   nodeRef?: (node: HTMLLIElement | null) => void
   style?: CSSProperties
+  /** The stop's place in the list while it's being dragged. */
+  placeholder?: boolean
+  /** The copy of the stop that follows the pointer. */
   dragging?: boolean
   /** A drag handle, shown before the stop's details. */
   handle?: ReactNode
@@ -405,7 +639,9 @@ function StopItem({
       data-kind={stop.kind}
       data-skipped={stop.skipped || undefined}
       data-selected={selected || undefined}
+      data-placeholder={placeholder || undefined}
       data-dragging={dragging || undefined}
+      data-drop={dropSide}
       data-sortable={handle ? true : undefined}
       // The whole row is clickable; the name is a button for keyboard users.
       onClick={() => onSelect(stop.id)}
