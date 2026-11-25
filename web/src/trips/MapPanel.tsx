@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import type { Day, Stop } from '../lib/database.types'
+import type { LatLng } from '../lib/geocode'
 import type { TripSummary } from '../lib/tripMath'
 import type { StopSelection } from './mapView'
 
@@ -13,6 +14,7 @@ export function MapPanel({
   summary,
   selection,
   onSelectStop,
+  onAddStopAt,
 }: {
   days: readonly Day[]
   stops: readonly Stop[]
@@ -20,6 +22,8 @@ export function MapPanel({
   summary: TripSummary
   selection: StopSelection | null
   onSelectStop: (stopId: string) => void
+  /** Owners and editors: add a stop where the map is right-clicked / long-pressed. */
+  onAddStopAt?: (point: LatLng) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const hasSize = useHasSize(ref)
@@ -39,6 +43,7 @@ export function MapPanel({
             showSkipped={showSkipped}
             selection={selection}
             onSelectStop={onSelectStop}
+            onAddStopAt={onAddStopAt}
           />
           <label className="map-toggle">
             <input
