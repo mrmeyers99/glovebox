@@ -437,9 +437,12 @@ button:disabled {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
+/* Where the dragged stop came from (or will land, within its own day). */
+.stop[data-placeholder] {
+  opacity: 0.4;
+}
+
 .stop[data-dragging] {
-  position: relative;
-  z-index: 1;
   background: var(--bg);
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
   border-radius: 4px;
@@ -449,8 +452,54 @@ button:disabled {
   cursor: grabbing;
 }
 
-.stop-list[data-dragging] .leg {
+.day-list[data-dragging] .leg {
   visibility: hidden;
+}
+
+/* Where a stop dragged from another day would land. */
+.day-card[data-drop-target] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.stop[data-drop='before'] {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.stop[data-drop='after'] {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* "+ Day N+1": drop a stop here to start a new day after the last one. */
+.day-new {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  margin: 0 0.75rem 0.75rem;
+  padding: 0.75rem;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.day-new-label {
+  font-weight: 600;
+}
+
+.day-new-hint {
+  font-size: 0.875rem;
+}
+
+.day-new[data-dragging] {
+  border-color: var(--accent);
+}
+
+.day-new[data-over] {
+  border-style: solid;
+  color: inherit;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
 .stop[data-skipped] {
