@@ -19,7 +19,12 @@ export type StopInput = {
   costCategory: CostCategory | null
 }
 
-export type RouteInfo = { distanceM: number; durationS: number }
+export type RouteInfo = {
+  distanceM: number
+  durationS: number
+  /** Encoded polyline (precision 5) of the driving line, when known. */
+  geometry?: string
+}
 
 /**
  * Looks up a route between two stops: undefined if it hasn't been fetched

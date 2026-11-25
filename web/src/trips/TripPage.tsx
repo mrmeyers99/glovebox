@@ -9,6 +9,7 @@ import { ShareDialog } from './ShareDialog'
 import { TripSettingsDialog } from './TripSettingsDialog'
 import { useReorderStop } from './useReorderStop'
 import { useTrip } from './useTrip'
+import { useTripSummary } from './useTripSummary'
 
 type View = 'list' | 'map'
 
@@ -27,6 +28,8 @@ export function TripPage() {
     dispatch,
   } = useTrip(tripId)
   const reorder = useReorderStop(dispatch)
+  // Called before the early return below (hooks can't be conditional).
+  const { summary, gasPriceKnown } = useTripSummary(trip, days, stops)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [addStopDay, setAddStopDay] = useState<{
@@ -116,6 +119,8 @@ export function TripPage() {
           trip={trip}
           days={days}
           stops={stops}
+          summary={summary}
+          gasPriceKnown={gasPriceKnown}
           selection={selection}
           onSelectStop={selectFromList}
           onAddStop={canEdit ? setAddStopDay : undefined}
@@ -130,6 +135,7 @@ export function TripPage() {
         <MapPanel
           days={days}
           stops={stops}
+          summary={summary}
           selection={selection}
           onSelectStop={selectFromMap}
         />

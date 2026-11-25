@@ -99,7 +99,16 @@ describe('toRouteEntry', () => {
   it('reads a route', () => {
     expect(
       toRouteEntry({ distance_m: 1000, duration_s: 60, geometry: 'x' }),
-    ).toEqual({ status: 'ok', route: { distanceM: 1000, durationS: 60 } })
+    ).toEqual({
+      status: 'ok',
+      route: { distanceM: 1000, durationS: 60, geometry: 'x' },
+    })
+  })
+  it('reads a route without geometry', () => {
+    expect(toRouteEntry({ distance_m: 1000, duration_s: 60 })).toEqual({
+      status: 'ok',
+      route: { distanceM: 1000, durationS: 60 },
+    })
   })
   it('treats no_route and too_long as final', () => {
     expect(toRouteEntry({ error: 'no_route', message: '' })).toEqual({

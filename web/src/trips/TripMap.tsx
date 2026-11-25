@@ -4,16 +4,21 @@
 import 'maplibre-gl/dist/maplibre-gl.css'
 import * as maplibregl from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
-import { memo, useEffect, useMemo, useRef } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { CSSProperties } from 'react'
 import {
   AttributionControl,
+  Layer,
   Map,
   Marker,
   NavigationControl,
+  Source,
+  type LineLayerSpecification,
   type MapRef,
 } from 'react-map-gl/maplibre'
+import type { ExpressionSpecification } from 'maplibre-gl'
 import type { Day, Stop } from '../lib/database.types'
+import type { TripSummary } from '../lib/tripMath'
 import { toDayInput, toStopInput } from '../lib/tripRows'
 import {
   FIT_MAX_ZOOM,
@@ -21,12 +26,18 @@ import {
   MAP_STYLE_URL,
   OSM_ATTRIBUTION,
   dayColor,
+  dayColorExpression,
+  highlightedDay,
   initialBounds,
   markerLabel,
+  routeBounds,
+  routeLines,
+  routeReady,
   stopMarkers,
   type StopMarker,
   type StopSelection,
 } from './mapView'
+import { useDayPalette } from './useDayPalette'
 
 // MapLibre finds its worker next to its own module file. Vite moves that
 // module (pre-bundling in dev, chunking in builds) and doesn't copy the worker,
@@ -36,12 +47,14 @@ maplibregl.setWorkerUrl(workerUrl)
 export default function TripMap({
   days,
   stops,
+  summary,
   showSkipped,
   selection,
   onSelectStop,
 }: {
   days: readonly Day[]
   stops: readonly Stop[]
+  summary: TripSummary
   showSkipped: boolean
   selection: StopSelection | null
   onSelectStop: (stopId: string) => void
@@ -59,6 +72,31 @@ export default function TripMap({
     [stops],
   )
   const selectedId = selection?.stopId ?? null
+
+  const lines = useMemo(() => routeLines(summary), [summary])
+  const highlight = highlightedDay(summary, selectedId)
+  const palette = useDayPalette()
+  const linePaint = useMemo(
+    () => routeLinePaint(palette, highlight),
+    [palette, highlight],
+  )
+  const casingPaint = useMemo(() => routeCasingPaint(highlight), [highlight])
+
+  // Fit to the route once, when it first finishes loading; later edits
+  // don't move the map under the user.
+  const ready = routeReady(summary, lines)
+  const bounds = useMemo(
+    () => (ready ? routeBounds(lines) : null),
+    [ready, lines],
+  )
+  const fitted = useRef(false)
+  const fitToRoute = useCallback(() => {
+    const map = mapRef.current
+    if (fitted.current || !bounds || !map) return
+    fitted.current = true
+    map.fitBounds(bounds, { padding: FIT_PADDING, maxZoom: FIT_MAX_ZOOM })
+  }, [bounds])
+  useEffect(fitToRoute, [fitToRoute])
 
   // Latest stops, read when a selection arrives: only a new selection pans,
   // later edits to the selected stop don't move the map.
@@ -93,7 +131,23 @@ export default function TripMap({
       mapStyle={MAP_STYLE_URL}
       attributionControl={false}
       style={{ width: '100%', height: '100%' }}
+      // In case the route was ready before the map was.
+      onLoad={fitToRoute}
     >
+      <Source id="route" type="geojson" data={lines}>
+        <Layer
+          id="route-casing"
+          type="line"
+          layout={ROUTE_LAYOUT}
+          paint={casingPaint}
+        />
+        <Layer
+          id="route-line"
+          type="line"
+          layout={ROUTE_LAYOUT}
+          paint={linePaint}
+        />
+      </Source>
       <NavigationControl position="top-right" />
       <AttributionControl
         position="bottom-right"
@@ -111,6 +165,50 @@ export default function TripMap({
       ))}
     </Map>
   )
+}
+
+type LinePaint = NonNullable<LineLayerSpecification['paint']>
+type LineLayout = NonNullable<LineLayerSpecification['layout']>
+
+const ROUTE_LAYOUT: LineLayout = { 'line-join': 'round', 'line-cap': 'round' }
+
+/** Line width (px) for a leg: wider on the highlighted day. */
+function routeWidth(
+  highlight: number | null,
+  normal: number,
+  wide: number,
+): number | ExpressionSpecification {
+  if (highlight === null) return normal
+  return ['case', ['==', ['get', 'dayNumber'], highlight], wide, normal - 1]
+}
+
+/** Legs of other days fade while a day is highlighted. */
+function routeOpacity(
+  highlight: number | null,
+  normal: number,
+): number | ExpressionSpecification {
+  if (highlight === null) return normal
+  return ['case', ['==', ['get', 'dayNumber'], highlight], 1, 0.35]
+}
+
+function routeLinePaint(
+  palette: string[],
+  highlight: number | null,
+): LinePaint {
+  return {
+    'line-color': dayColorExpression(palette),
+    'line-width': routeWidth(highlight, 4, 6),
+    'line-opacity': routeOpacity(highlight, 0.9),
+  }
+}
+
+/** A white outline under each line, so it reads over roads and labels. */
+function routeCasingPaint(highlight: number | null): LinePaint {
+  return {
+    'line-color': '#ffffff',
+    'line-width': routeWidth(highlight, 7, 9),
+    'line-opacity': routeOpacity(highlight, 0.9),
+  }
 }
 
 const StopMarkerPin = memo(function StopMarkerPin({
