@@ -350,6 +350,29 @@ describe('planMove', () => {
     expect([...keys].sort(comparePositions)).toEqual(keys)
   })
 
+  it("doesn't bound a waypoint's key by an out-of-order start or end", () => {
+    // Saved by older versions: the start's key sorts after the waypoints'
+    // and the end's before them.
+    const messy = [
+      makeStop('start', 'Zz', 'start'),
+      makeStop('a', 'a0'),
+      makeStop('b', 'a1'),
+      makeStop('c', 'a2'),
+      makeStop('end', 'Zy', 'end'),
+    ]
+    const trip = { days: [days[0]], stops: messy }
+    expect(after('c', { type: 'day', dayId: 'd1', index: 1 }, trip)).toEqual({
+      d1: ['start:start', 'c', 'a', 'b', 'end:end'],
+    })
+    expect(after('a', { type: 'day', dayId: 'd1', index: 3 }, trip)).toEqual({
+      d1: ['start:start', 'b', 'c', 'a', 'end:end'],
+    })
+    // The keys alone sort the waypoints right, whatever the roles.
+    const result = plan('c', { type: 'day', dayId: 'd1', index: 1 }, trip)
+    const c = withChanges(messy, (result as MovePlan).changes)[3]
+    expect(comparePositions(c.position, 'a0')).toBeLessThan(0)
+  })
+
   it('returns null when nothing changes', () => {
     expect(plan('a', { type: 'day', dayId: 'd1', index: 1 })).toBeNull()
     expect(plan('a', { type: 'day', dayId: 'nope', index: 0 })).toBeNull()
@@ -357,14 +380,15 @@ describe('planMove', () => {
 
   it('only writes the fields that change, keeping keys that still fit', () => {
     const result = plan('a', { type: 'day', dayId: 'd1', index: 0 }) as MovePlan
-    // a's key already sorts before the old start's new key.
+    // The new start gets a key before everything else on Day 1; the old
+    // start's key already fits before the next waypoint, so only its kind
+    // changes.
     expect(result.changes).toEqual([
-      { id: 'a', kind: 'start' },
-      { id: 'start', kind: 'waypoint', position: expect.any(String) },
+      { id: 'a', kind: 'start', position: expect.any(String) },
+      { id: 'start', kind: 'waypoint' },
     ])
-    const start = result.changes[1].position!
-    expect(comparePositions(start, byId('a').position)).toBeGreaterThan(0)
-    expect(comparePositions(start, byId('b').position)).toBeLessThan(0)
+    const start = result.changes[0].position!
+    expect(comparePositions(start, byId('start').position)).toBeLessThan(0)
   })
 })
 

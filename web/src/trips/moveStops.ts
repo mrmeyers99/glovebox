@@ -7,7 +7,11 @@
 
 import type { Dispatch } from 'react'
 import type { Day, Stop, StopKind } from '../lib/database.types'
-import { positionAtEnd, positionBetween } from '../lib/positions'
+import {
+  positionAtEnd,
+  positionAtStart,
+  positionBetween,
+} from '../lib/positions'
 import { comparePositions } from '../lib/tripMath'
 import type { TripEndKind } from './tripEnds'
 import type { TripAction } from './tripState'
@@ -167,45 +171,65 @@ export function planMove(
     kinds.set(holder.id, role)
   }
 
-  // New keys for stops that moved or changed role, fitting between their
-  // neighbours; the others keep theirs.
+  // New keys for stops that moved or changed role; the others keep theirs.
+  // Stops sort by role first (start, waypoints, end), then key, so a
+  // waypoint's key only has to fit between the waypoints around it: the
+  // start's and end's keys may be out of order (saved by older versions) and
+  // must not be used as bounds. A new start or end gets a key before or after
+  // everything else on its day, so the keys stay in display order too.
   const original = new Map(stops.map((s) => [s.id, s]))
   const changes: StopChange[] = []
   for (const [dayId, list] of lists) {
-    const changed = list.map((s) => {
+    const final = new Map(list.map((s) => [s.id, original.get(s.id)!.position]))
+    const isChanged = (s: Movable) => {
       const was = original.get(s.id)!
       return (
         s.id === moved.id ||
         was.day_id !== dayId ||
         was.kind !== kinds.get(s.id)
       )
-    })
+    }
+    const isWaypoint = (s: Movable) => kinds.get(s.id) === 'waypoint'
+    const othersKeys = (stop: Movable) =>
+      list.filter((s) => s.id !== stop.id).map((s) => final.get(s.id)!)
+
     let prev: string | null = null
-    list.forEach((stop, i) => {
-      const was = original.get(stop.id)!
-      let position = was.position
-      if (changed[i]) {
-        const before = prev
-        const next =
-          list
-            .slice(i + 1)
-            .filter((_, j) => !changed[i + 1 + j])
-            .map((s) => s.position)
-            .find((p) => before === null || comparePositions(p, before) > 0) ??
-          null
-        const fits =
-          (before === null || comparePositions(position, before) > 0) &&
-          (next === null || comparePositions(position, next) < 0)
-        if (!fits) position = positionBetween(before, next)
+    for (const [i, stop] of list.entries()) {
+      const kind = kinds.get(stop.id)!
+      let position = final.get(stop.id)!
+      if (isChanged(stop)) {
+        if (kind === 'waypoint') {
+          const before = prev
+          const next =
+            list
+              .slice(i + 1)
+              .filter((s) => isWaypoint(s) && !isChanged(s))
+              .map((s) => s.position)
+              .find(
+                (p) => before === null || comparePositions(p, before) > 0,
+              ) ?? null
+          const fits =
+            (before === null || comparePositions(position, before) > 0) &&
+            (next === null || comparePositions(position, next) < 0)
+          if (!fits) position = positionBetween(before, next)
+        } else {
+          const others = othersKeys(stop)
+          const sign = kind === 'start' ? -1 : 1
+          if (others.some((k) => comparePositions(position, k) * sign <= 0))
+            position =
+              kind === 'start' ? positionAtStart(others) : positionAtEnd(others)
+        }
+        final.set(stop.id, position)
       }
-      prev = position
+      if (kind === 'waypoint') prev = position
+
+      const was = original.get(stop.id)!
       const change: StopChange = { id: stop.id }
       if (was.day_id !== dayId) change.day_id = dayId
       if (was.position !== position) change.position = position
-      const kind = kinds.get(stop.id)!
       if (was.kind !== kind) change.kind = kind
       if (Object.keys(change).length > 1) changes.push(change)
-    })
+    }
   }
 
   if (changes.length === 0 && !newDay) return null
