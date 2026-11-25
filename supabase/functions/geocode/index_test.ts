@@ -75,7 +75,7 @@ Deno.test('search returns places and biases to the US', async () => {
   })
   assertEquals(calls.length, 1)
   const { url, init } = calls[0]
-  assertEquals(url.pathname, '/geocode/search')
+  assertEquals(url.pathname, '/pelias/v1/search')
   assertEquals(url.searchParams.get('text'), 'Arches')
   assertEquals(url.searchParams.get('size'), '8')
   assertEquals(url.searchParams.get('boundary.country'), 'US')
@@ -95,7 +95,7 @@ Deno.test('reverse returns one place', async () => {
   assertEquals(results.length, 1)
   assertEquals(results[0].name, '123 Main St')
   const { url } = calls[0]
-  assertEquals(url.pathname, '/geocode/reverse')
+  assertEquals(url.pathname, '/pelias/v1/reverse')
   assertEquals(url.searchParams.get('point.lat'), '38.57')
   assertEquals(url.searchParams.get('point.lon'), '-109.55')
   assertEquals(url.searchParams.get('boundary.country'), 'US')
