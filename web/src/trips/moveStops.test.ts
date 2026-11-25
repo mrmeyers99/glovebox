@@ -6,6 +6,7 @@ import {
   moveStop,
   moveToNewDay,
   reorderedPosition,
+  type StopPatch,
 } from './moveStops'
 import { tripReducer, type TripAction, type TripState } from './tripState'
 
@@ -175,6 +176,24 @@ describe('moveStop', () => {
     expect(error).not.toBeNull()
   })
 
+  it('skips a stop, saving only skipped', async () => {
+    const saved = { ...stop, skipped: true, updated_at: '2026-11-25T00:01:00Z' }
+    const { actions, save, deps } = setup({ data: saved, error: null })
+
+    const error = await moveStop(
+      stop,
+      { skipped: true },
+      { ...deps, isLatest: () => true },
+    )
+
+    expect(error).toBeNull()
+    expect(save).toHaveBeenCalledExactlyOnceWith('a', { skipped: true })
+    expect(actions).toEqual([
+      { type: 'upsertStop', stop: { ...stop, skipped: true } },
+      { type: 'upsertStop', stop: saved },
+    ])
+  })
+
   it("doesn't roll back over a newer move of the same stop", async () => {
     const { actions, deps } = setup({
       data: null,
@@ -322,14 +341,12 @@ describe('moveToNewDay', () => {
           ? { data: null, error: { message: 'insert denied' } }
           : { data: { ...makeDay(day.id, day.position) }, error: null },
     )
-    const save = vi.fn(
-      async (id: string, move: { day_id?: string; position: string }) => {
-        if (saveFails(id))
-          return { data: null, error: { message: 'save denied' } }
-        const stop = stops.find((s) => s.id === id)!
-        return { data: { ...stop, ...move }, error: null }
-      },
-    )
+    const save = vi.fn(async (id: string, move: StopPatch) => {
+      if (saveFails(id))
+        return { data: null, error: { message: 'save denied' } }
+      const stop = stops.find((s) => s.id === id)!
+      return { data: { ...stop, ...move }, error: null }
+    })
     const deleteDay = vi.fn(async () =>
       deleteFails ? { error: { message: 'delete denied' } } : { error: null },
     )

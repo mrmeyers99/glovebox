@@ -111,9 +111,12 @@ type Result<T> = { data: T | null; error: { message: string } | null }
 /** The fields a move changes. */
 export type StopMove = { day_id?: string; position: string }
 
+/** The fields an optimistic stop update can change: a move, or skipping. */
+export type StopPatch = StopMove | { skipped: boolean }
+
 export type SaveStopMove = (
   stopId: string,
-  move: StopMove,
+  patch: StopPatch,
 ) => Promise<Result<Stop>>
 
 export type InsertDay = (
@@ -139,14 +142,14 @@ async function attempt<R extends { error: { message: string } | null }>(
 }
 
 /**
- * Move `stop` (to another day and/or position): update local state at once,
- * then save. If the save fails, restore the stop (unless `isLatest` says a
- * newer move of the same stop has happened since) and return the error
- * message.
+ * Move `stop` (to another day and/or position) or skip or unskip it: update
+ * local state at once, then save. If the save fails, restore the stop
+ * (unless `isLatest` says a newer change of the same stop has happened
+ * since) and return the error message.
  */
 export async function moveStop(
   stop: Stop,
-  move: StopMove,
+  move: StopPatch,
   {
     dispatch,
     save,

@@ -31,10 +31,14 @@ import {
 import { PlaceSearchField } from './PlaceSearchField'
 import type { TripAction } from './tripState'
 
-/** Adding a waypoint to a day, or opening an existing stop. */
+/**
+ * Adding a waypoint to a day, opening an existing stop, or confirming a
+ * waypoint's deletion (from its menu).
+ */
 export type StopDialogMode =
   | { type: 'add'; dayId: string; dayNumber: number }
   | { type: 'edit'; stop: Stop; dayNumber: number }
+  | { type: 'delete'; stop: Stop; dayNumber: number }
 
 type Props = {
   tripId: string
@@ -70,20 +74,50 @@ export function StopDialog(props: Props) {
       // Escape closes the dialog natively; keep React state in step.
       onClose={onClose}
     >
-      {mode.type === 'edit' && !canEdit ? (
+      {mode.type === 'delete' ? (
+        <DeleteStopConfirm
+          stop={mode.stop}
+          dayNumber={mode.dayNumber}
+          dispatch={props.dispatch}
+          onClose={onClose}
+        />
+      ) : mode.type === 'edit' && !canEdit ? (
         <StopDetails
           stop={mode.stop}
           dayNumber={mode.dayNumber}
           onClose={onClose}
         />
       ) : (
-        <StopForm {...props} />
+        <StopForm {...props} mode={mode} />
       )}
     </dialog>
   )
 }
 
-function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
+/**
+ * Deletes stop `id`. Returns an error message, or null once it's deleted.
+ */
+async function deleteStopRow(id: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('stops')
+    .delete()
+    .eq('id', id)
+    .select('id')
+  if (error) return `Couldn't delete the stop: ${error.message}`
+  // No rows means row-level security hid it: no longer allowed to edit.
+  if (data.length === 0)
+    return "Couldn't delete the stop: you can't change this trip."
+  return null
+}
+
+function StopForm({
+  tripId,
+  mode,
+  days,
+  stops,
+  dispatch,
+  onClose,
+}: Props & { mode: Exclude<StopDialogMode, { type: 'delete' }> }) {
   const editing = mode.type === 'edit' ? mode.stop : null
   // The stop as it was when opened; saving sends only what changed since.
   const [original] = useState(editing)
@@ -178,17 +212,10 @@ function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
     if (!editing) return
     setSaving(true)
     setSaveError(null)
-    const { data, error } = await supabase
-      .from('stops')
-      .delete()
-      .eq('id', editing.id)
-      .select('id')
+    const message = await deleteStopRow(editing.id)
     setSaving(false)
-    if (error || data.length === 0) {
-      // No rows means row-level security hid it: no longer allowed to edit.
-      setSaveError(
-        `Couldn't delete the stop: ${error?.message ?? "you can't change this trip."}`,
-      )
+    if (message) {
+      setSaveError(message)
       setConfirmingDelete(false)
       return
     }
@@ -357,6 +384,60 @@ function StopForm({ tripId, mode, days, stops, dispatch, onClose }: Props) {
         </div>
       )}
     </form>
+  )
+}
+
+/** Asks before deleting `stop`, when Delete is picked from its menu. */
+function DeleteStopConfirm({
+  stop,
+  dayNumber,
+  dispatch,
+  onClose,
+}: {
+  stop: Stop
+  dayNumber: number
+  dispatch: Dispatch<TripAction>
+  onClose: () => void
+}) {
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function confirm() {
+    setDeleting(true)
+    setError(null)
+    const message = await deleteStopRow(stop.id)
+    setDeleting(false)
+    if (message) {
+      setError(message)
+      return
+    }
+    dispatch({ type: 'removeStop', id: stop.id })
+    onClose()
+  }
+
+  return (
+    <div className="dialog-form stop-view">
+      <h2 id="stop-dialog-title">Delete {stop.name}?</h2>
+      <p>It will be removed from Day {dayNumber}. This can't be undone.</p>
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+      <div className="dialog-actions">
+        <button type="button" onClick={onClose} disabled={deleting} autoFocus>
+          Keep it
+        </button>
+        <button
+          type="button"
+          className="danger"
+          onClick={confirm}
+          disabled={deleting}
+        >
+          {deleting ? 'Deleting…' : 'Delete stop'}
+        </button>
+      </div>
+    </div>
   )
 }
 
