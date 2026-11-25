@@ -244,6 +244,138 @@ button:disabled {
   text-align: center;
 }
 
+/* Day list */
+.day-list,
+.stop-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.day-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+.day-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  min-width: 0;
+}
+
+.day-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 0.5rem;
+}
+
+.day-header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.day-header time,
+.day-notes,
+.day-rest,
+.stop-address,
+.stop-cost,
+.stop-arrival {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.day-notes,
+.day-rest {
+  margin: 0.25rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.day-rest {
+  font-style: italic;
+}
+
+.stop-list {
+  margin-top: 0.5rem;
+}
+
+.stop {
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+
+.stop-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.stop-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.stop-arrival {
+  flex-shrink: 0;
+}
+
+.stop-address,
+.stop-cost {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.stop-badge {
+  display: inline-block;
+  margin-right: 0.375rem;
+  padding: 0 0.375rem;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: 0.1em;
+}
+
+.stop[data-skipped] {
+  opacity: 0.55;
+}
+
+.stop[data-skipped] .stop-name {
+  text-decoration: line-through;
+}
+
+.stop-badge-skipped {
+  background: var(--muted);
+  color: var(--bg);
+}
+
+.day-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
+  gap: 0.25rem 0.75rem;
+  margin: 0.5rem 0 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+
+.day-totals dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.day-totals dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
 .map-panel {
   position: relative;
   height: 100%;
