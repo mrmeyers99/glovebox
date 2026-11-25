@@ -151,7 +151,8 @@ function StopItem({ stop }: { stop: Stop }) {
         )}
       </div>
       {stop.address && <p className="stop-address">{stop.address}</p>}
-      {cost > 0 && (
+      {/* Skipped stops don't count toward the totals, so don't show a cost. */}
+      {cost > 0 && !stop.skipped && (
         <p className="stop-cost">
           {formatMoney(cost)}
           {stop.cost_category && ` · ${stop.cost_category}`}
