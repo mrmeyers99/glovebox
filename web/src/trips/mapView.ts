@@ -10,6 +10,15 @@ import type { Stop } from '../lib/database.types'
  */
 export const MAP_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty'
 
+/**
+ * OpenStreetMap credit shown even when the tile source fails to load (content
+ * blockers such as Brave Shields block OpenFreeMap's tile index, which carries
+ * the credit). It matches the link inside OpenFreeMap's own credit exactly, so
+ * once that loads MapLibre folds this into it instead of showing it twice.
+ */
+export const OSM_ATTRIBUTION =
+  '<a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>'
+
 /** [[west, south], [east, north]] in degrees. */
 export type LngLatBounds = [[number, number], [number, number]]
 
