@@ -100,6 +100,46 @@ do $$ begin
 end $$;
 reset role;
 
+-- Route cache: shared by everyone, written only by the route Edge Function
+-- (service role). Signed-in users can read it but not change it.
+set role service_role;
+insert into public.route_cache
+  (from_lat, from_lng, to_lat, to_lng, distance_m, duration_s, geometry)
+  values (40, -75, 40.1, -75.1, 15000, 900, '_ixrFvk~gM');
+insert into public.route_cache
+  (from_lat, from_lng, to_lat, to_lng, distance_m, duration_s, geometry)
+  values (40, -75, 40.1, -75.1, 16000, 950, '_ixrFvk~gM')
+  on conflict (from_lat, from_lng, to_lat, to_lng)
+  do update set distance_m = excluded.distance_m, fetched_at = now();
+reset role;
+
+do $$ begin perform pg_temp.act_as('dave'); end $$;
+do $$ begin
+  assert (select distance_m from public.route_cache) = 16000,
+    'service role can refresh a cache entry; any signed-in user can read it';
+  begin
+    insert into public.route_cache
+      (from_lat, from_lng, to_lat, to_lng, distance_m, duration_s, geometry)
+      values (1, 1, 2, 2, 1, 1, 'x');
+    assert false, 'signed-in user cannot write route_cache';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.route_cache set distance_m = 0;
+    assert false, 'signed-in user cannot update route_cache';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+set role anon;
+do $$ begin
+  perform 1 from public.route_cache;
+  assert false, 'anon cannot read route_cache';
+exception when insufficient_privilege then null;
+end $$;
+reset role;
+
 -- Anonymous users have no access.
 set role anon;
 do $$ begin

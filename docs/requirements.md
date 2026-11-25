@@ -140,6 +140,7 @@ Notes:
 
 - Days have an explicit `position`; dates are derived, not stored.
 - `route_cache` is keyed by rounded coordinates so identical legs are shared across trips.
+  Entries older than 90 days are refetched; only the `route` Edge Function writes it.
 - RLS: a user can read a trip and its days/stops if they are a member; write if owner or editor.
 
 ## 9. Roadmap

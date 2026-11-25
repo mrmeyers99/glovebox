@@ -461,6 +461,10 @@
       "verify_jwt": false,
       "import_map": "./functions/deno.json",
     },
+    "route": {
+      "verify_jwt": false,
+      "import_map": "./functions/deno.json",
+    },
   },
 
   "edge_runtime": {
