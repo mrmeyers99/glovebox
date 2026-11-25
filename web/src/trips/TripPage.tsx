@@ -1,11 +1,11 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { Trip } from '../lib/database.types'
-import { AddStopDialog } from './AddStopDialog'
 import { DayListPanel } from './DayListPanel'
 import { MapPanel } from './MapPanel'
 import type { StopSelection } from './mapView'
 import { ShareDialog } from './ShareDialog'
+import { StopDialog, type StopDialogMode } from './StopDialog'
 import { TripSettingsDialog } from './TripSettingsDialog'
 import { useMoveStop } from './useMoveStop'
 import { useTrip } from './useTrip'
@@ -32,18 +32,34 @@ export function TripPage() {
   const { summary, gasPriceKnown } = useTripSummary(trip, days, stops)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
-  const [addStopDay, setAddStopDay] = useState<{
-    dayId: string
-    dayNumber: number
-  } | null>(null)
+  // The stop dialog: adding to a day, or the id of the stop opened.
+  const [stopDialog, setStopDialog] = useState<
+    | { type: 'add'; dayId: string; dayNumber: number }
+    | { type: 'edit'; stopId: string }
+    | null
+  >(null)
   // Which panel shows at phone width; desktop shows both.
   const [view, setView] = useState<View>('list')
   // Stop selected in the day list or on the map; the other panel follows.
   const [selection, setSelection] = useState<StopSelection | null>(null)
-  const selectFromList = useCallback(
-    (stopId: string) => setSelection({ stopId, source: 'list' }),
+  // Clicking a stop in the list selects it and opens its details.
+  const selectFromList = useCallback((stopId: string) => {
+    setSelection({ stopId, source: 'list' })
+    setStopDialog({ type: 'edit', stopId })
+  }, [])
+  const openAddStop = useCallback(
+    (day: { dayId: string; dayNumber: number }) =>
+      setStopDialog({ type: 'add', ...day }),
     [],
   )
+  // Resolved on every render so the dialog follows live changes; it closes
+  // if the stop is deleted meanwhile.
+  const stopDialogMode = useMemo((): StopDialogMode | null => {
+    if (stopDialog?.type !== 'edit') return stopDialog
+    const stop = stops.find((s) => s.id === stopDialog.stopId)
+    const day = summary.days.find((d) => d.dayId === stop?.day_id)
+    return stop && day ? { type: 'edit', stop, dayNumber: day.dayNumber } : null
+  }, [stopDialog, stops, summary.days])
   const selectFromMap = useCallback(
     (stopId: string) => setSelection({ stopId, source: 'map' }),
     [],
@@ -123,7 +139,7 @@ export function TripPage() {
           gasPriceKnown={gasPriceKnown}
           selection={selection}
           onSelectStop={selectFromList}
-          onAddStop={canEdit ? setAddStopDay : undefined}
+          onAddStop={canEdit ? openAddStop : undefined}
           onMoveStop={canEdit ? moveStop.move : undefined}
         />
       </section>
@@ -148,15 +164,21 @@ export function TripPage() {
           onClose={() => setSettingsOpen(false)}
         />
       )}
-      {addStopDay && canEdit && (
-        <AddStopDialog
+      {stopDialogMode && (stopDialogMode.type === 'edit' || canEdit) && (
+        <StopDialog
+          // A fresh form for each stop opened.
+          key={
+            stopDialogMode.type === 'edit'
+              ? stopDialogMode.stop.id
+              : `add:${stopDialogMode.dayId}`
+          }
           tripId={trip.id}
-          dayId={addStopDay.dayId}
-          dayNumber={addStopDay.dayNumber}
+          mode={stopDialogMode}
+          canEdit={canEdit}
           days={days}
           stops={stops}
           dispatch={dispatch}
-          onClose={() => setAddStopDay(null)}
+          onClose={() => setStopDialog(null)}
         />
       )}
       {shareOpen && role && (

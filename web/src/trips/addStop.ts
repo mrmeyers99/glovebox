@@ -1,5 +1,5 @@
-// Add-stop form: string inputs and a picked place in, a validated `stops`
-// insert out. The rules mirror the database checks so mistakes are caught
+// Stop form (add and edit): string inputs and a picked place in, validated
+// `stops` fields out. The rules mirror the database checks so mistakes are caught
 // before saving. Also where a new stop goes in its day, and which point to
 // bias place search toward.
 
@@ -159,6 +159,49 @@ export function parseStopForm(
       stay_minutes: stay,
     },
   }
+}
+
+/** A stay in minutes as form text, e.g. `1h 30m`, `45m`, `2h`. */
+export function formatStay(minutes: number): string {
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  if (hours === 0) return `${rest}m`
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`
+}
+
+/** The form pre-filled from a saved stop, for editing it. */
+export function stopFormFromStop(stop: Stop): StopFormInput {
+  // numeric columns can arrive as strings; normalize either way.
+  const cost = stop.cost_amount == null ? null : Number(stop.cost_amount)
+  return {
+    name: stop.name,
+    notes: stop.notes ?? '',
+    costAmount: cost === null ? '' : formatCostInput(cost),
+    costCategory: stop.cost_category ?? '',
+    // <input type="time"> shows minutes only; drop the seconds Postgres adds.
+    arrivalTime: stop.arrival_time?.slice(0, 5) ?? '',
+    stay: stop.stay_minutes == null ? '' : formatStay(stop.stay_minutes),
+  }
+}
+
+/** Whole dollars without cents (`120`), otherwise two decimals (`12.50`). */
+function formatCostInput(amount: number) {
+  return Number.isInteger(amount) ? String(amount) : amount.toFixed(2)
+}
+
+/** A saved stop's location as a place, so an edit can keep it. */
+export function placeFromStop(stop: Stop): Place {
+  return {
+    name: stop.name,
+    address: stop.address ?? '',
+    lat: stop.lat,
+    lng: stop.lng,
+  }
+}
+
+/** Start and end stops can only be changed, not deleted. */
+export function canDeleteStop(stop: Pick<Stop, 'kind'>): boolean {
+  return stop.kind === 'waypoint'
 }
 
 /**
