@@ -1,6 +1,6 @@
-// The trip's start and end stops: the start lives on the first day and the
-// end on the last day. When days are added or removed, the end stop follows
-// the last day (and the start the first day).
+// The trip's start and end stops: the start is the first stop on the first
+// day and the end the last stop on the last day. Moving stops can hand these
+// roles to other stops (see moveStops.ts).
 
 import type { Day, Stop, StopKind } from '../lib/database.types'
 import type { Place } from '../lib/geocode'
@@ -49,29 +49,6 @@ export function tripEndSlot(
     dayId: day.id,
     position: kind === 'start' ? positionAtStart(keys) : positionAtEnd(keys),
   }
-}
-
-/**
- * Where to move the trip's start or end stop so it's on the first or last
- * day, or null if it already is (or there's no such stop or no day).
- */
-export function tripEndPlacement<S extends Placeable>(
-  kind: TripEndKind,
-  days: Positioned[],
-  stops: S[],
-): { stop: S; dayId: string; position: string } | null {
-  const stop = stops.find((s) => s.kind === kind)
-  const slot = tripEndSlot(kind, days, stops)
-  if (!stop || !slot || stop.day_id === slot.dayId) return null
-  return { stop, ...slot }
-}
-
-/** Where to move the end stop so it's on the last day; see tripEndPlacement. */
-export function endStopPlacement<S extends Placeable>(
-  days: Positioned[],
-  stops: S[],
-): { stop: S; dayId: string; position: string } | null {
-  return tripEndPlacement('end', days, stops)
 }
 
 /** Which of the start and end the trip doesn't have yet. */

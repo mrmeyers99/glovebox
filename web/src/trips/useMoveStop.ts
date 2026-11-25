@@ -2,19 +2,19 @@ import { useCallback, useRef, useState, type Dispatch } from 'react'
 import type { Day, Stop } from '../lib/database.types'
 import { supabase } from '../lib/supabase'
 import {
-  moveStop,
-  moveToNewDay,
+  applyMove,
+  planMove,
   type DeleteDay,
   type InsertDay,
   type Placement,
-  type SaveStopMove,
+  type SaveStopChanges,
 } from './moveStops'
 import type { TripAction } from './tripState'
 
-// Writes only the moved stop's day and position (updated_by/updated_at are
-// set by triggers).
-const saveMove: SaveStopMove = async (stopId, move) =>
-  supabase.from('stops').update(move).eq('id', stopId).select().maybeSingle()
+// Writes only the changed stops' day, position and kind, in one transaction
+// (updated_by/updated_at are set by triggers).
+const saveChanges: SaveStopChanges = async (changes) =>
+  supabase.rpc('move_stops', { p_moves: changes })
 
 const insertDay: InsertDay = async (day) =>
   supabase.from('days').insert(day).select().single()
@@ -24,7 +24,7 @@ const deleteDay: DeleteDay = async (dayId) =>
 
 /**
  * Move a stop to a new day and/or position, optimistically. `error` is the
- * last failed save's message, cleared by the next move or `clearError`.
+ * last failed move's message, cleared by the next move or `clearError`.
  */
 export function useMoveStop(
   dispatch: Dispatch<TripAction>,
@@ -38,35 +38,28 @@ export function useMoveStop(
 
   const move = useCallback(
     async (stop: Stop, placement: Placement) => {
+      setError(null)
+      const plan = planMove(days, stops, stop, placement, crypto.randomUUID())
+      if (!plan) return
+      if ('error' in plan) {
+        setError(`Couldn't move ${stop.name}: ${plan.error}`)
+        return
+      }
+
       const id = ++counter.current
-      // A new day can bring the end stop along, so it's moving too.
-      const moving =
-        placement.type === 'newDay'
-          ? [stop.id, ...stops.filter((s) => s.kind === 'end').map((s) => s.id)]
-          : [stop.id]
+      // A move can change other stops too (the start or end handing over).
+      const moving = plan.changes.map((c) => c.id)
       for (const stopId of moving) latest.current.set(stopId, id)
       const isLatest = (stopId: string) => latest.current.get(stopId) === id
-      setError(null)
 
-      const message =
-        placement.type === 'newDay'
-          ? await moveToNewDay(stop, {
-              days,
-              stops,
-              newDayId: crypto.randomUUID(),
-              dispatch,
-              insertDay,
-              deleteDay,
-              save: saveMove,
-              isLatest,
-            })
-          : await moveStop(
-              stop,
-              placement.dayId === stop.day_id
-                ? { position: placement.position }
-                : { day_id: placement.dayId, position: placement.position },
-              { dispatch, save: saveMove, isLatest: () => isLatest(stop.id) },
-            )
+      const message = await applyMove(plan, {
+        stops,
+        dispatch,
+        insertDay,
+        deleteDay,
+        save: saveChanges,
+        isLatest,
+      })
 
       for (const stopId of moving) {
         if (isLatest(stopId)) latest.current.delete(stopId)

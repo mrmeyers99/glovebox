@@ -214,6 +214,64 @@ do $$ begin
 end $$;
 reset role;
 
+-- Moving stops can hand the start role to another stop, atomically.
+do $$ begin perform pg_temp.act_as('alice'); end $$;
+do $$
+declare
+  v_trip uuid := (select id from public.trips where name = 'Cross country');
+  v_day uuid := (select id from public.days where trip_id = v_trip);
+  v_home uuid := (select id from public.stops where trip_id = v_trip and kind = 'start');
+  v_cafe uuid;
+begin
+  insert into public.stops (trip_id, day_id, position, name, lat, lng, skipped)
+    values (v_trip, v_day, 'a1', 'Cafe', 40.1, -75.1, true) returning id into v_cafe;
+
+  perform public.move_stops(jsonb_build_array(
+    jsonb_build_object('id', v_cafe, 'position', 'Zz', 'kind', 'start'),
+    jsonb_build_object('id', v_home, 'kind', 'waypoint')));
+  assert (select kind from public.stops where id = v_cafe) = 'start', 'waypoint becomes the start';
+  assert not (select skipped from public.stops where id = v_cafe), 'new start is un-skipped';
+  assert (select kind from public.stops where id = v_home) = 'waypoint', 'old start becomes a waypoint';
+
+  begin
+    perform public.move_stops(jsonb_build_array(
+      jsonb_build_object('id', v_home, 'kind', 'start'),
+      jsonb_build_object('id', v_cafe, 'kind', 'waypoint'),
+      jsonb_build_object('id', gen_random_uuid(), 'position', 'a5')));
+    assert false, 'moving a missing stop fails';
+  exception when no_data_found then null;
+  end;
+  assert (select kind from public.stops where id = v_cafe) = 'start',
+    'a failed batch changes nothing';
+
+  -- Put things back for the tests below.
+  perform public.move_stops(jsonb_build_array(
+    jsonb_build_object('id', v_home, 'kind', 'start'),
+    jsonb_build_object('id', v_cafe, 'kind', 'waypoint')));
+  delete from public.stops where id = v_cafe;
+end $$;
+reset role;
+
+-- A viewer can't move stops.
+do $$ begin perform pg_temp.act_as('carol'); end $$;
+do $$ begin
+  begin
+    perform public.move_stops(jsonb_build_array(jsonb_build_object(
+      'id', (select id from public.stops where kind = 'start'), 'position', 'b0')));
+    assert false, 'viewer cannot move stops';
+  exception when no_data_found then null;
+  end;
+end $$;
+reset role;
+
+set role anon;
+do $$ begin
+  perform public.move_stops('[]');
+  assert false, 'anon cannot call move_stops';
+exception when insufficient_privilege then null;
+end $$;
+reset role;
+
 -- Route cache: shared by everyone, written only by the route Edge Function
 -- (service role). Signed-in users can read it but not change it.
 set role service_role;
