@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { Trip } from '../lib/database.types'
+import { AddStopDialog } from './AddStopDialog'
 import { DayListPanel } from './DayListPanel'
 import { MapPanel } from './MapPanel'
 import type { StopSelection } from './mapView'
@@ -26,6 +27,10 @@ export function TripPage() {
   } = useTrip(tripId)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [addStopDay, setAddStopDay] = useState<{
+    dayId: string
+    dayNumber: number
+  } | null>(null)
   // Which panel shows at phone width; desktop shows both.
   const [view, setView] = useState<View>('list')
   // Stop selected in the day list or on the map; the other panel follows.
@@ -103,6 +108,7 @@ export function TripPage() {
           stops={stops}
           selection={selection}
           onSelectStop={selectFromList}
+          onAddStop={canEdit ? setAddStopDay : undefined}
         />
       </section>
       <section
@@ -123,6 +129,17 @@ export function TripPage() {
           trip={trip}
           dispatch={dispatch}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+      {addStopDay && canEdit && (
+        <AddStopDialog
+          tripId={trip.id}
+          dayId={addStopDay.dayId}
+          dayNumber={addStopDay.dayNumber}
+          days={days}
+          stops={stops}
+          dispatch={dispatch}
+          onClose={() => setAddStopDay(null)}
         />
       )}
       {shareOpen && role && (

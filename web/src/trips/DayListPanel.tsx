@@ -22,12 +22,15 @@ export function DayListPanel({
   stops,
   selection,
   onSelectStop,
+  onAddStop,
 }: {
   trip: Trip
   days: Day[]
   stops: Stop[]
   selection: StopSelection | null
   onSelectStop: (stopId: string) => void
+  /** Shows an Add stop button on each day; pass only for owners and editors. */
+  onAddStop?: (day: { dayId: string; dayNumber: number }) => void
 }) {
   const gasPrice =
     trip.gas_price_per_gallon === null
@@ -66,6 +69,7 @@ export function DayListPanel({
           gasPriceKnown={gasPrice !== null}
           selection={selection}
           onSelectStop={onSelectStop}
+          onAddStop={onAddStop}
         />
       ))}
     </ol>
@@ -80,6 +84,7 @@ function DayCard({
   gasPriceKnown,
   selection,
   onSelectStop,
+  onAddStop,
 }: {
   summary: DaySummary
   notes: string | null
@@ -88,6 +93,7 @@ function DayCard({
   gasPriceKnown: boolean
   selection: StopSelection | null
   onSelectStop: (stopId: string) => void
+  onAddStop?: (day: { dayId: string; dayNumber: number }) => void
 }) {
   const totals = formatTotals(summary, { gasPriceKnown })
   const headingId = `day-${summary.dayId}`
@@ -131,6 +137,18 @@ function DayCard({
             )
           })}
         </ol>
+      )}
+
+      {onAddStop && (
+        <button
+          type="button"
+          className="day-add-stop"
+          onClick={() =>
+            onAddStop({ dayId: summary.dayId, dayNumber: summary.dayNumber })
+          }
+        >
+          + Add stop
+        </button>
       )}
 
       <dl className="day-totals">
