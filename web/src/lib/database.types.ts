@@ -131,6 +131,17 @@ export type Database = {
     Views: Record<never, never>
     Functions: {
       accept_my_invites: { Args: Record<never, never>; Returns: number }
+      move_stops: {
+        Args: {
+          p_moves: {
+            id: string
+            day_id?: string
+            position?: string
+            kind?: StopKind
+          }[]
+        }
+        Returns: Stop[]
+      }
     }
     Enums: {
       trip_role: TripRole

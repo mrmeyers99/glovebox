@@ -96,8 +96,8 @@ vi.mock('./useTripSummary', () => ({
     gasPriceKnown: true,
   }),
 }))
-vi.mock('./useStopUpdates', () => ({
-  useStopUpdates: () => ({
+vi.mock('./useMoveStop', () => ({
+  useMoveStop: () => ({
     move: mocks.move,
     setSkipped: mocks.setSkipped,
     error: null,
@@ -181,7 +181,7 @@ describe('TripPage stop menu', () => {
     expect(mocks.move).toHaveBeenCalledWith(diner, {
       type: 'day',
       dayId: 'd2',
-      position: expect.any(String),
+      index: expect.any(Number),
     })
 
     openMenu('Diner')

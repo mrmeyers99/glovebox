@@ -17,11 +17,13 @@ describe('stopMenuActions', () => {
     ])
   })
 
-  it("only offers Edit on the start and end, which can't be skipped", () => {
+  it("offers Move and Edit on the start and end, which can't be skipped or deleted", () => {
     expect(stopMenuActions({ kind: 'start', skipped: false }, true)).toEqual([
+      'move',
       'edit',
     ])
     expect(stopMenuActions({ kind: 'end', skipped: false }, true)).toEqual([
+      'move',
       'edit',
     ])
   })

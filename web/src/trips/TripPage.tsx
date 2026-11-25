@@ -16,7 +16,7 @@ import { TripSettingsDialog } from './TripSettingsDialog'
 import { dropPlacement } from './moveStops'
 import { StopMenu } from './StopMenu'
 import type { MenuAnchor } from './stopMenu'
-import { useStopUpdates } from './useStopUpdates'
+import { useMoveStop } from './useMoveStop'
 import { usePresence } from './usePresence'
 import { useTrip } from './useTrip'
 import { useTripSummary } from './useTripSummary'
@@ -37,7 +37,7 @@ export function TripPage() {
     reload,
     dispatch,
   } = useTrip(tripId)
-  const stopUpdates = useStopUpdates(dispatch, days, stops)
+  const stopUpdates = useMoveStop(dispatch, days, stops)
   // Called before the early return below (hooks can't be conditional).
   const { summary, gasPriceKnown } = useTripSummary(trip, days, stops)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -104,6 +104,8 @@ export function TripPage() {
   const menuStop = stopMenu
     ? stops.find((s) => s.id === stopMenu.stopId)
     : undefined
+  // Forget it too, rather than keep state for a menu that can't show.
+  if (stopMenu && !menuStop && !loading) setStopMenu(null)
   const menuDays = useMemo(
     () => summary.days.map(({ dayId, dayNumber }) => ({ dayId, dayNumber })),
     [summary.days],

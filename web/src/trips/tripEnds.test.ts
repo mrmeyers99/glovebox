@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { Place } from '../lib/geocode'
 import {
-  endStopPlacement,
   firstDay,
   lastDay,
   missingTripEnds,
   parseTripEndForm,
-  tripEndPlacement,
   tripEndSaveError,
   tripEndSlot,
 } from './tripEnds'
@@ -42,39 +40,6 @@ describe('lastDay', () => {
         { id: 'upper', position: 'Zz' },
       ])?.id,
     ).toBe('lower')
-  })
-})
-
-describe('endStopPlacement', () => {
-  it('moves the end stop to the last day, after its stops', () => {
-    const stops = [
-      stop('start', 'start', 'd1', 'a0'),
-      stop('end', 'end', 'd2', 'a0'),
-      stop('a', 'waypoint', 'd3', 'a5'),
-    ]
-    const placement = endStopPlacement(days, stops)
-    expect(placement?.stop.id).toBe('end')
-    expect(placement?.dayId).toBe('d3')
-    expect(placement!.position > 'a5').toBe(true)
-  })
-
-  it('moves the end stop to an empty last day', () => {
-    const stops = [stop('end', 'end', 'd2', 'a3')]
-    expect(endStopPlacement(days, stops)).toMatchObject({
-      dayId: 'd3',
-      position: 'a0',
-    })
-  })
-
-  it('is null when the end stop is already on the last day', () => {
-    expect(endStopPlacement(days, [stop('end', 'end', 'd3', 'a0')])).toBeNull()
-  })
-
-  it('is null without an end stop or days', () => {
-    expect(
-      endStopPlacement(days, [stop('a', 'waypoint', 'd1', 'a0')]),
-    ).toBeNull()
-    expect(endStopPlacement([], [stop('end', 'end', 'd1', 'a0')])).toBeNull()
   })
 })
 
@@ -134,32 +99,6 @@ describe('tripEndSlot', () => {
   it('is null without days', () => {
     expect(tripEndSlot('start', [], [])).toBeNull()
     expect(tripEndSlot('end', [], [])).toBeNull()
-  })
-})
-
-describe('tripEndPlacement', () => {
-  it('moves the start stop to the first day, before its stops', () => {
-    const stops = [
-      stop('start', 'start', 'd2', 'a0'),
-      stop('a', 'waypoint', 'd1', 'a0'),
-    ]
-    const placement = tripEndPlacement('start', days, stops)
-    expect(placement?.stop.id).toBe('start')
-    expect(placement?.dayId).toBe('d1')
-    expect(placement!.position < 'a0').toBe(true)
-  })
-
-  it('is null when the start is already on the first day', () => {
-    expect(
-      tripEndPlacement('start', days, [stop('start', 'start', 'd1', 'a5')]),
-    ).toBeNull()
-  })
-
-  it('handles the end like endStopPlacement', () => {
-    const stops = [stop('end', 'end', 'd1', 'a0')]
-    expect(tripEndPlacement('end', days, stops)).toEqual(
-      endStopPlacement(days, stops),
-    )
   })
 })
 

@@ -1,8 +1,10 @@
 // Day list: days in order with their dates, notes, stops and totals. Owners
-// and editors can drag waypoints to reorder them within a day, move them to
+// and editors can drag stops to reorder them within a day, move them to
 // another day, or drop them on the "+ Day N+1" zone to start a new day, and
-// set or change the trip's start and end. Each stop has a menu (StopMenu),
-// opened from its "⋯" button, a right-click or a long-press.
+// set or change the trip's start and end. Whichever stop ends up first on
+// Day 1 is the start, and last on the last day the end.
+// Each stop has a menu (StopMenu), opened from its "⋯" button, a
+// right-click or a long-press.
 
 import {
   DndContext,
@@ -84,7 +86,7 @@ function dragData(item: { data: { current?: unknown } } | null | undefined) {
 /**
  * Prefer the "+ Day N+1" zone or the day under the pointer (with the
  * keyboard, the day the dragged stop overlaps most), then the closest stop
- * on that day. A day with no waypoints is a target itself.
+ * on that day. A day with no stops is a target itself.
  */
 const collisionDetection: CollisionDetection = (args) => {
   const pointer = pointerWithin(args)
@@ -128,7 +130,7 @@ function sameTarget(a: DropTarget | null, b: DropTarget | null) {
 const verticalOnly: Modifier = ({ transform }) => ({ ...transform, x: 0 })
 
 /**
- * With `onMoveStop`, waypoints can be dragged by their handle: with a mouse,
+ * With `onMoveStop`, stops can be dragged by their handle: with a mouse,
  * a touch press-and-hold (so a plain swipe still scrolls), or the keyboard
  * (Space or Enter on the handle, arrows, Space or Enter again).
  */
@@ -158,7 +160,7 @@ export function DayListPanel({
   onSelectStop: (stopId: string) => void
   /** Shows an Add stop button on each day; pass only for owners and editors. */
   onAddStop?: (day: { dayId: string; dayNumber: number }) => void
-  /** Makes waypoints draggable; pass only for owners and editors. */
+  /** Makes stops draggable; pass only for owners and editors. */
   onMoveStop?: (stop: Stop, placement: Placement) => void
   /**
    * Shows "Set start" / "Set end" prompts while the trip lacks them, and a
@@ -215,15 +217,13 @@ export function DayListPanel({
 
   const announcements = useMemo((): Announcements => {
     const name = (id: string) => stopsById.get(id)?.name ?? ''
-    // Where a stop on `dayId` is, among that day's waypoints.
+    // Where a stop on `dayId` is, among that day's stops.
     const positionOnDay = (dayId: string, stopId: string) => {
-      const waypoints = (stopsByDay.get(dayId) ?? []).filter(
-        (s) => s.kind === 'waypoint',
-      )
-      const i = waypoints.findIndex((s) => s.id === stopId)
+      const dayStops = stopsByDay.get(dayId) ?? []
+      const i = dayStops.findIndex((s) => s.id === stopId)
       return i === -1
         ? null
-        : `position ${i + 1} of ${waypoints.length} on Day ${dayNumbers.get(dayId)}`
+        : `position ${i + 1} of ${dayStops.length} on Day ${dayNumbers.get(dayId)}`
     }
     const where = (active: Active, over: Over | null) => {
       const t = dropTargetOf(active, over)
@@ -535,8 +535,8 @@ function TripEndPrompt({
 
 /**
  * A day's stops in order, each with the leg arriving at it. With `canMove`,
- * waypoints can be dragged by their handle. With `onSetTripEnd`, the start
- * and end have a Change button.
+ * stops can be dragged by their handle. With `onSetTripEnd`, the start and
+ * end have a Change button.
  */
 function StopList({
   dayId,
@@ -567,10 +567,7 @@ function StopList({
   onOpenStopMenu?: OpenStopMenu
   stopEditors?: Map<string, Peer[]>
 }) {
-  const waypointIds = useMemo(
-    () => stops.filter((s) => s.kind === 'waypoint').map((s) => s.id),
-    [stops],
-  )
+  const stopIds = useMemo(() => stops.map((s) => s.id), [stops])
 
   const items = stops.map((stop) => {
     const leg = legsByArrival.get(stop.id)
@@ -590,6 +587,21 @@ function StopList({
       onSelect: onSelectStop,
       menuOpen: menuStopId === stop.id,
       onOpenMenu: onOpenStopMenu,
+      action:
+        onSetTripEnd && endKind ? (
+          <button
+            type="button"
+            className="stop-action"
+            aria-label={`Change the trip's ${endKind}`}
+            // Changing the stop shouldn't also select it.
+            onClick={(e) => {
+              e.stopPropagation()
+              onSetTripEnd(endKind, stop)
+            }}
+          >
+            Change
+          </button>
+        ) : undefined,
       editors: stopEditors?.get(stop.id),
     }
     return (
@@ -600,28 +612,10 @@ function StopList({
             fromName={stopsById.get(leg.from.id)?.name ?? ''}
           />
         )}
-        {canMove && stop.kind === 'waypoint' ? (
+        {canMove ? (
           <SortableStopItem {...props} dayId={dayId} />
         ) : (
-          <StopItem
-            {...props}
-            action={
-              onSetTripEnd && endKind ? (
-                <button
-                  type="button"
-                  className="stop-action"
-                  aria-label={`Change the trip's ${endKind}`}
-                  // Changing the stop shouldn't also select it.
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onSetTripEnd(endKind, stop)
-                  }}
-                >
-                  Change
-                </button>
-              ) : undefined
-            }
-          />
+          <StopItem {...props} />
         )}
       </Fragment>
     )
@@ -630,7 +624,7 @@ function StopList({
   if (!canMove) return <ol className="stop-list">{items}</ol>
 
   return (
-    <SortableContext items={waypointIds} strategy={verticalListSortingStrategy}>
+    <SortableContext items={stopIds} strategy={verticalListSortingStrategy}>
       <ol className="stop-list">{items}</ol>
     </SortableContext>
   )
@@ -648,6 +642,8 @@ type StopItemProps = {
   menuOpen?: boolean
   /** Gives the stop a "⋯" menu button, right-click and long-press menu. */
   onOpenMenu?: OpenStopMenu
+  /** A button shown after the stop's name, e.g. to change it. */
+  action?: ReactNode
   /** Others with this stop's edit form open. */
   editors?: Peer[]
 }
@@ -752,8 +748,6 @@ function StopItem({
   dragging?: boolean
   /** A drag handle, shown before the stop's details. */
   handle?: ReactNode
-  /** A button shown after the stop's name, e.g. to change it. */
-  action?: ReactNode
 }) {
   const kindLabel = stop.kind === 'waypoint' ? null : KIND_LABELS[stop.kind]
   const cost = stop.cost_amount == null ? 0 : Number(stop.cost_amount)

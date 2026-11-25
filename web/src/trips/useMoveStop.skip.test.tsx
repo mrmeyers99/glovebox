@@ -3,7 +3,7 @@ import { act, cleanup, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Stop } from '../lib/database.types'
 import type { TripAction } from './tripState'
-import { useStopUpdates } from './useStopUpdates'
+import { useMoveStop } from './useMoveStop'
 
 type Saved = { data: Stop | null; error: { message: string } | null }
 
@@ -59,12 +59,12 @@ const stop: Stop = {
 function setup() {
   const actions: TripAction[] = []
   const { result } = renderHook(() =>
-    useStopUpdates((a) => actions.push(a), [], [stop]),
+    useMoveStop((a) => actions.push(a), [], [stop]),
   )
   return { actions, result }
 }
 
-describe('useStopUpdates.setSkipped', () => {
+describe('useMoveStop.setSkipped', () => {
   it('skips the stop at once and saves only `skipped`', async () => {
     const saved = { ...stop, skipped: true, updated_at: 'later' }
     mocks.saved = Promise.resolve({ data: saved, error: null })

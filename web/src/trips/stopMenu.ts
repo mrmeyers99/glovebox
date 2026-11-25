@@ -17,14 +17,15 @@ export type StopMenuAction =
 
 /**
  * The actions `stop`'s menu offers, in order. Viewers can only view details.
- * Start and end stops can't be moved between days, skipped or deleted.
+ * The start and end can be moved like any stop (handing their role over),
+ * but not skipped or deleted.
  */
 export function stopMenuActions(
   stop: Pick<Stop, 'kind' | 'skipped'>,
   canEdit: boolean,
 ): StopMenuAction[] {
   if (!canEdit) return ['view']
-  if (stop.kind !== 'waypoint') return ['edit']
+  if (stop.kind !== 'waypoint') return ['move', 'edit']
   return ['move', stop.skipped ? 'unskip' : 'skip', 'edit', 'delete']
 }
 
