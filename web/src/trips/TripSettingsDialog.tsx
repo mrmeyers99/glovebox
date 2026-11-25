@@ -6,6 +6,7 @@ import {
   type FormEvent,
 } from 'react'
 import type { Trip } from '../lib/database.types'
+import { formatNationalAverage } from '../lib/gasPrice'
 import { supabase } from '../lib/supabase'
 import {
   changedSettings,
@@ -15,6 +16,7 @@ import {
   type TripSettingsInput,
 } from './tripSettings'
 import type { TripAction } from './tripState'
+import { useNationalAverage } from './useNationalAverage'
 
 type Props = {
   trip: Trip
@@ -32,6 +34,7 @@ export function TripSettingsDialog({ trip, dispatch, onClose }: Props) {
   const [errors, setErrors] = useState<TripSettingsErrors>({})
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const nationalAverage = useNationalAverage()
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -138,7 +141,9 @@ export function TripSettingsDialog({ trip, dispatch, onClose }: Props) {
             placeholder="National average"
           />
           <span className="field-hint">
-            Leave blank to use the national average.
+            {input.gasPrice.trim() === '' && nationalAverage
+              ? formatNationalAverage(nationalAverage)
+              : 'Leave blank to use the national average.'}
           </span>
           {fieldError('gasPrice')}
         </div>

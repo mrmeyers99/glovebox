@@ -10,7 +10,9 @@ import {
   type RouteLookup,
 } from '../lib/tripMath'
 import { toDayInput, toStopInput } from '../lib/tripRows'
+import { effectiveGasPrice } from '../lib/gasPrice'
 import { formatTotals } from './dayTotals'
+import { useNationalAverage } from './useNationalAverage'
 
 // Routes aren't fetched yet (#21), so every leg is pending.
 const noRoutes: RouteLookup = () => undefined
@@ -24,10 +26,9 @@ export function DayListPanel({
   days: Day[]
   stops: Stop[]
 }) {
-  const gasPrice =
-    trip.gas_price_per_gallon === null
-      ? null
-      : Number(trip.gas_price_per_gallon)
+  // The trip's own price, else the national average (null until it loads).
+  const nationalAverage = useNationalAverage()
+  const gasPrice = effectiveGasPrice(trip.gas_price_per_gallon, nationalAverage)
 
   const summary = useMemo(
     () =>
