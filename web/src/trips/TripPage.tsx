@@ -14,6 +14,7 @@ export function TripPage() {
   const {
     trip,
     role,
+    days,
     stops,
     canEdit,
     loading,
@@ -85,7 +86,7 @@ export function TripPage() {
         className="trip-panel trip-panel-list"
         aria-label="Days and stops"
       >
-        <DayListPanel />
+        <DayListPanel trip={trip} days={days} stops={stops} />
       </section>
       <section
         id="trip-panel-map"
