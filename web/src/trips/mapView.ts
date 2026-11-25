@@ -97,11 +97,11 @@ export type StopMarker = {
   dayNumber: number
   colorIndex: number
   /**
-   * 1-based position among the day's active stops, start and end included,
-   * so it matches the order the route visits them. Null for skipped stops,
-   * which aren't on the route.
+   * 1-based position among the trip's active waypoints, counting across days
+   * in the order the route visits them. Null for skipped stops, which aren't
+   * on the route, and for start and end, which show an icon instead.
    */
-  numberInDay: number | null
+  stopNumber: number | null
 }
 
 /**
@@ -116,11 +116,12 @@ export function stopMarkers(
 ): StopMarker[] {
   const active: StopMarker[] = []
   const skipped: StopMarker[] = []
+  let count = 0
   orderTrip(days, stops).forEach(({ stops: dayStops }, i) => {
     const dayNumber = i + 1
-    let count = 0
     for (const stop of dayStops) {
-      if (!stop.skipped) count += 1
+      const numbered = !stop.skipped && stop.kind === 'waypoint'
+      if (numbered) count += 1
       if (stop.skipped && !options.showSkipped) continue
       if (!Number.isFinite(stop.lat) || !Number.isFinite(stop.lng)) continue
       const marker: StopMarker = {
@@ -131,7 +132,7 @@ export function stopMarkers(
         skipped: stop.skipped,
         dayNumber,
         colorIndex: dayColorIndex(dayNumber),
-        numberInDay: stop.skipped ? null : count,
+        stopNumber: numbered ? count : null,
       }
       ;(stop.skipped ? skipped : active).push(marker)
     }
@@ -139,12 +140,12 @@ export function stopMarkers(
   return [...skipped, ...active]
 }
 
-/** Accessible name for a marker, e.g. "Day 2, stop 3: Moab (end)". */
+/** Accessible name for a marker, e.g. "Day 2, stop 3: Moab" or "Day 3: Home (end)". */
 export function markerLabel(marker: StopMarker, name: string): string {
   const where =
-    marker.numberInDay === null
+    marker.stopNumber === null
       ? `Day ${marker.dayNumber}`
-      : `Day ${marker.dayNumber}, stop ${marker.numberInDay}`
+      : `Day ${marker.dayNumber}, stop ${marker.stopNumber}`
   const notes = [
     marker.kind === 'waypoint' ? null : marker.kind,
     marker.skipped ? 'skipped' : null,

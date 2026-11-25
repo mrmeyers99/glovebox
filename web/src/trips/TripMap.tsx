@@ -273,5 +273,5 @@ function MarkerContent({ marker }: { marker: StopMarker }) {
       </svg>
     )
   }
-  return <span aria-hidden="true">{marker.numberInDay ?? ''}</span>
+  return <span aria-hidden="true">{marker.stopNumber ?? ''}</span>
 }

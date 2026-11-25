@@ -112,26 +112,26 @@ describe('stopMarkers', () => {
     stopMarkers(days, stops, { showSkipped }).map((m) => [
       m.stopId,
       m.dayNumber,
-      m.numberInDay,
+      m.stopNumber,
     ])
 
-  it('numbers active stops within each day, in trip order', () => {
+  it('numbers active waypoints across the whole trip, in trip order', () => {
     expect(summary(false)).toEqual([
-      ['start', 1, 1],
-      ['b', 1, 2],
+      ['start', 1, null],
+      ['b', 1, 1],
       // 'Zz' sorts before 'a0' byte-wise (uppercase first).
-      ['c', 2, 1],
-      ['end', 2, 2],
+      ['c', 2, 2],
+      ['end', 2, null],
     ])
   })
 
   it('shows skipped stops, unnumbered and underneath, when asked', () => {
     expect(summary(true)).toEqual([
       ['skip', 1, null],
-      ['start', 1, 1],
-      ['b', 1, 2],
-      ['c', 2, 1],
-      ['end', 2, 2],
+      ['start', 1, null],
+      ['b', 1, 1],
+      ['c', 2, 2],
+      ['end', 2, null],
     ])
   })
 
@@ -155,7 +155,7 @@ describe('stopMarkers', () => {
       [s('nan', 'd1', 'a0', { lng: Number.NaN }), s('ok', 'd1', 'a1')],
       { showSkipped: false },
     )
-    expect(markers.map((m) => [m.stopId, m.numberInDay])).toEqual([['ok', 2]])
+    expect(markers.map((m) => [m.stopId, m.stopNumber])).toEqual([['ok', 2]])
   })
 })
 
@@ -168,7 +168,7 @@ describe('markerLabel', () => {
     skipped: false,
     dayNumber: 2,
     colorIndex: 1,
-    numberInDay: 3,
+    stopNumber: 3,
   }
 
   it('names the day and stop number', () => {
@@ -176,11 +176,11 @@ describe('markerLabel', () => {
   })
 
   it('notes start, end and skipped', () => {
-    expect(markerLabel({ ...base, kind: 'end' }, 'Home')).toBe(
-      'Day 2, stop 3: Home (end)',
-    )
     expect(
-      markerLabel({ ...base, skipped: true, numberInDay: null }, 'Arches'),
+      markerLabel({ ...base, kind: 'end', stopNumber: null }, 'Home'),
+    ).toBe('Day 2: Home (end)')
+    expect(
+      markerLabel({ ...base, skipped: true, stopNumber: null }, 'Arches'),
     ).toBe('Day 2: Arches (skipped)')
   })
 })

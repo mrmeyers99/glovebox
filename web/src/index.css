@@ -613,7 +613,7 @@ button:disabled {
 }
 
 /* Stop markers: a circle filled with the day's colour, showing the stop's
-   number in its day; start and end are squares with an icon. */
+   number in the trip; start and end are squares with an icon. */
 .stop-marker {
   display: flex;
   align-items: center;
