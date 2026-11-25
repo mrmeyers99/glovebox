@@ -1,19 +1,21 @@
 // Read-only day list: days in order with their dates, notes, stops and totals.
 
-import { useMemo } from 'react'
+import { Fragment, useMemo } from 'react'
 import type { Day, Stop, Trip } from '../lib/database.types'
 import { formatDayDate, formatMoney, formatTimeOfDay } from '../lib/format'
 import {
   dayDate,
+  effectiveGasPrice,
   summarizeTrip,
   type DaySummary,
-  type RouteLookup,
+  type Leg,
 } from '../lib/tripMath'
 import { toDayInput, toStopInput } from '../lib/tripRows'
-import { formatTotals } from './dayTotals'
+import { LegItem, TotalsList, TripTotalsBar } from './RouteTotals'
+import { useRoutes } from './useRoutes'
 
-// Routes aren't fetched yet (#21), so every leg is pending.
-const noRoutes: RouteLookup = () => undefined
+// The national average is a constant for now, so the price is always known.
+const gasPriceKnown = true
 
 export function DayListPanel({
   trip,
@@ -24,19 +26,39 @@ export function DayListPanel({
   days: Day[]
   stops: Stop[]
 }) {
-  const gasPrice =
+  const gasPrice = effectiveGasPrice(
     trip.gas_price_per_gallon === null
       ? null
-      : Number(trip.gas_price_per_gallon)
+      : Number(trip.gas_price_per_gallon),
+  )
+  const mpg = Number(trip.mpg)
 
+  const dayInputs = useMemo(() => days.map(toDayInput), [days])
+  const stopInputs = useMemo(() => stops.map(toStopInput), [stops])
+  // The legs the trip needs, before any routes are known.
+  const neededLegs = useMemo(
+    () =>
+      summarizeTrip(dayInputs, stopInputs, {
+        mpg,
+        gasPricePerGallon: gasPrice,
+        route: () => undefined,
+      }).legs,
+    [dayInputs, stopInputs, mpg, gasPrice],
+  )
+  const route = useRoutes(neededLegs)
   const summary = useMemo(
     () =>
-      summarizeTrip(days.map(toDayInput), stops.map(toStopInput), {
-        mpg: Number(trip.mpg),
-        gasPricePerGallon: gasPrice ?? 0,
-        route: noRoutes,
+      summarizeTrip(dayInputs, stopInputs, {
+        mpg,
+        gasPricePerGallon: gasPrice,
+        route,
       }),
-    [days, stops, trip.mpg, gasPrice],
+    [dayInputs, stopInputs, mpg, gasPrice, route],
+  )
+  // Each leg is shown above the stop it arrives at.
+  const legsByArrival = useMemo(
+    () => new Map(summary.legs.map((leg) => [leg.to.id, leg])),
+    [summary.legs],
   )
   const daysById = useMemo(() => new Map(days.map((d) => [d.id, d])), [days])
   const stopsById = useMemo(() => new Map(stops.map((s) => [s.id, s])), [stops])
@@ -50,18 +72,22 @@ export function DayListPanel({
   }
 
   return (
-    <ol className="day-list">
-      {summary.days.map((day) => (
-        <DayCard
-          key={day.dayId}
-          summary={day}
-          notes={daysById.get(day.dayId)?.notes ?? null}
-          date={dayDate(trip.start_date, day.dayNumber)}
-          stopsById={stopsById}
-          gasPriceKnown={gasPrice !== null}
-        />
-      ))}
-    </ol>
+    <>
+      <TripTotalsBar totals={summary.totals} gasPriceKnown={gasPriceKnown} />
+      <ol className="day-list">
+        {summary.days.map((day) => (
+          <DayCard
+            key={day.dayId}
+            summary={day}
+            notes={daysById.get(day.dayId)?.notes ?? null}
+            date={dayDate(trip.start_date, day.dayNumber)}
+            stopsById={stopsById}
+            legsByArrival={legsByArrival}
+            gasPriceKnown={gasPriceKnown}
+          />
+        ))}
+      </ol>
+    </>
   )
 }
 
@@ -70,15 +96,16 @@ function DayCard({
   notes,
   date,
   stopsById,
+  legsByArrival,
   gasPriceKnown,
 }: {
   summary: DaySummary
   notes: string | null
   date: string | null
   stopsById: Map<string, Stop>
+  legsByArrival: Map<string, Leg>
   gasPriceKnown: boolean
 }) {
-  const totals = formatTotals(summary, { gasPriceKnown })
   const headingId = `day-${summary.dayId}`
 
   return (
@@ -95,31 +122,29 @@ function DayCard({
         <ol className="stop-list">
           {summary.stops.map((input) => {
             const stop = stopsById.get(input.id)
-            return stop && <StopItem key={stop.id} stop={stop} />
+            const leg = legsByArrival.get(input.id)
+            return (
+              stop && (
+                <Fragment key={stop.id}>
+                  {leg && (
+                    <LegItem
+                      leg={leg}
+                      fromName={stopsById.get(leg.from.id)?.name ?? ''}
+                    />
+                  )}
+                  <StopItem stop={stop} />
+                </Fragment>
+              )
+            )
           })}
         </ol>
       )}
 
-      <dl className="day-totals">
-        <div>
-          <dt>Driving</dt>
-          <dd>
-            {totals.distance} · {totals.duration}
-          </dd>
-        </div>
-        <div>
-          <dt>Gas</dt>
-          <dd>{totals.gas}</dd>
-        </div>
-        <div>
-          <dt>Other</dt>
-          <dd>{totals.other}</dd>
-        </div>
-        <div>
-          <dt>Total</dt>
-          <dd>{totals.total}</dd>
-        </div>
-      </dl>
+      <TotalsList
+        totals={summary}
+        gasPriceKnown={gasPriceKnown}
+        className="day-totals"
+      />
     </li>
   )
 }

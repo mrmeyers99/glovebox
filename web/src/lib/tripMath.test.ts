@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   METERS_PER_MILE,
+  PLACEHOLDER_NATIONAL_GAS_PRICE,
   dayDate,
+  effectiveGasPrice,
   gasCost,
   orderTrip,
   summarizeTrip,
@@ -31,6 +33,17 @@ function stop(
 // Every leg is 100 miles and 2 hours.
 const route = () => ({ distanceM: 100 * METERS_PER_MILE, durationS: 7200 })
 const options = { mpg: 25, gasPricePerGallon: 4, route }
+
+describe('effectiveGasPrice', () => {
+  it("uses the trip's own price when set", () => {
+    expect(effectiveGasPrice(3.5)).toBe(3.5)
+    expect(effectiveGasPrice(0)).toBe(0)
+  })
+  it('falls back to the national average', () => {
+    expect(effectiveGasPrice(null)).toBe(PLACEHOLDER_NATIONAL_GAS_PRICE)
+    expect(effectiveGasPrice(null, 2.9)).toBe(2.9)
+  })
+})
 
 describe('gasCost', () => {
   it('is miles / mpg * price', () => {
@@ -154,7 +167,28 @@ describe('summarizeTrip', () => {
       route: () => undefined,
     })
     expect(summary.totals.pendingLegs).toBe(1)
+    expect(summary.totals.failedLegs).toBe(0)
     expect(summary.totals.drivingMiles).toBe(0)
+    expect(summary.legs[0].status).toBe('pending')
+  })
+
+  it('counts legs with no route as failed and leaves them out of totals', () => {
+    const days = [{ id: 'd1', position: 'a0' }]
+    const stops = [
+      stop('home', 'd1', 'a0', { kind: 'start', lat: 1 }),
+      stop('island', 'd1', 'a1', { lat: 2 }),
+      stop('dest', 'd1', 'a2', { kind: 'end', lat: 3 }),
+    ]
+    const summary = summarizeTrip(days, stops, {
+      ...options,
+      route: (from) => (from.id === 'home' ? null : route()),
+    })
+    expect(summary.legs.map((l) => l.status)).toEqual(['failed', 'ok'])
+    expect(summary.legs[0].route).toBeUndefined()
+    expect(summary.totals.failedLegs).toBe(1)
+    expect(summary.totals.pendingLegs).toBe(0)
+    expect(summary.totals.drivingMiles).toBeCloseTo(100)
+    expect(summary.totals.gasCost).toBeCloseTo(16)
   })
 
   it('files uncategorized costs under other', () => {
