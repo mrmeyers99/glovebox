@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import type { Trip } from '../lib/database.types'
 import { DayListPanel } from './DayListPanel'
 import { MapPanel } from './MapPanel'
+import { ShareDialog } from './ShareDialog'
 import { TripSettingsDialog } from './TripSettingsDialog'
 import { useTrip } from './useTrip'
 
@@ -10,9 +11,10 @@ type View = 'list' | 'map'
 
 export function TripPage() {
   const { tripId } = useParams()
-  const { trip, canEdit, loading, error, notFound, reload, dispatch } =
+  const { trip, role, canEdit, loading, error, notFound, reload, dispatch } =
     useTrip(tripId)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   // Which panel shows at phone width; desktop shows both.
   const [view, setView] = useState<View>('list')
 
@@ -50,6 +52,9 @@ export function TripPage() {
           <h1>{trip.name}</h1>
           <TripSummary trip={trip} />
         </div>
+        <button type="button" onClick={() => setShareOpen(true)}>
+          Share
+        </button>
         {canEdit && (
           <button type="button" onClick={() => setSettingsOpen(true)}>
             Settings
@@ -86,6 +91,13 @@ export function TripPage() {
           trip={trip}
           dispatch={dispatch}
           onClose={() => setSettingsOpen(false)}
+        />
+      )}
+      {shareOpen && role && (
+        <ShareDialog
+          trip={trip}
+          role={role}
+          onClose={() => setShareOpen(false)}
         />
       )}
     </div>
