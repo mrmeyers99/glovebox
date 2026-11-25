@@ -661,6 +661,32 @@ button:disabled {
   opacity: 0.8;
 }
 
+/* "Add stop here", shown where the map was right-clicked or long-pressed. */
+.map-add-popup .maplibregl-popup-content {
+  padding: 0.375rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.3);
+}
+
+.map-add-popup.maplibregl-popup-anchor-bottom .maplibregl-popup-tip {
+  border-top-color: var(--border);
+}
+
+.map-add-popup button {
+  white-space: nowrap;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+/* A long press drops a pin; don't also show the browser's callout. */
+.map-panel .maplibregl-canvas {
+  -webkit-touch-callout: none;
+}
+
 .map-loading {
   margin: 0;
   padding: 1rem;

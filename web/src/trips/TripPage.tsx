@@ -1,7 +1,9 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { Stop, Trip } from '../lib/database.types'
+import type { LatLng } from '../lib/geocode'
 import { DayListPanel } from './DayListPanel'
+import { defaultDropDay } from './mapAdd'
 import { MapPanel } from './MapPanel'
 import type { StopSelection } from './mapView'
 import { ShareDialog } from './ShareDialog'
@@ -34,9 +36,10 @@ export function TripPage() {
   const { summary, gasPriceKnown } = useTripSummary(trip, days, stops)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
-  // The stop dialog: adding to a day, or the id of the stop opened.
+  // The stop dialog: adding to a day (optionally at a spot picked on the
+  // map), or the id of the stop opened.
   const [stopDialog, setStopDialog] = useState<
-    | { type: 'add'; dayId: string; dayNumber: number }
+    | { type: 'add'; dayId: string; dayNumber: number; at?: LatLng }
     | { type: 'edit'; stopId: string }
     | null
   >(null)
@@ -62,6 +65,14 @@ export function TripPage() {
     (day: { dayId: string; dayNumber: number }) =>
       setStopDialog({ type: 'add', ...day }),
     [],
+  )
+  // A spot picked on the map goes to the selected stop's day, else the last.
+  const addStopAt = useCallback(
+    (at: LatLng) => {
+      const day = defaultDropDay(days, stops, selection?.stopId ?? null)
+      if (day) setStopDialog({ type: 'add', ...day, at })
+    },
+    [days, stops, selection],
   )
   // Resolved on every render so the dialog follows live changes; it closes
   // if the stop is deleted meanwhile.
@@ -166,6 +177,7 @@ export function TripPage() {
           summary={summary}
           selection={selection}
           onSelectStop={selectFromMap}
+          onAddStopAt={canEdit && days.length > 0 ? addStopAt : undefined}
         />
       </section>
 
@@ -182,7 +194,9 @@ export function TripPage() {
           key={
             stopDialogMode.type === 'edit'
               ? stopDialogMode.stop.id
-              : `add:${stopDialogMode.dayId}`
+              : stopDialogMode.at
+                ? `add:${stopDialogMode.at.lat},${stopDialogMode.at.lng}`
+                : `add:${stopDialogMode.dayId}`
           }
           tripId={trip.id}
           mode={stopDialogMode}

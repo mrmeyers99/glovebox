@@ -4,20 +4,23 @@
 import 'maplibre-gl/dist/maplibre-gl.css'
 import * as maplibregl from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react'
-import type { CSSProperties } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties, RefObject } from 'react'
 import {
   AttributionControl,
   Layer,
   Map,
   Marker,
   NavigationControl,
+  Popup,
   Source,
   type LineLayerSpecification,
+  type MapLayerMouseEvent,
   type MapRef,
 } from 'react-map-gl/maplibre'
 import type { ExpressionSpecification } from 'maplibre-gl'
 import type { Day, Stop } from '../lib/database.types'
+import type { LatLng } from '../lib/geocode'
 import type { TripSummary } from '../lib/tripMath'
 import { toDayInput, toStopInput } from '../lib/tripRows'
 import {
@@ -37,6 +40,7 @@ import {
   type StopMarker,
   type StopSelection,
 } from './mapView'
+import { mapPoint } from './mapAdd'
 import { useDayPalette } from './useDayPalette'
 
 // MapLibre finds its worker next to its own module file. Vite moves that
@@ -51,6 +55,7 @@ export default function TripMap({
   showSkipped,
   selection,
   onSelectStop,
+  onAddStopAt,
 }: {
   days: readonly Day[]
   stops: readonly Stop[]
@@ -58,6 +63,8 @@ export default function TripMap({
   showSkipped: boolean
   selection: StopSelection | null
   onSelectStop: (stopId: string) => void
+  /** Owners and editors: offers "Add stop here" on right-click / long-press. */
+  onAddStopAt?: (point: LatLng) => void
 }) {
   const mapRef = useRef<MapRef>(null)
   const markers = useMemo(
@@ -118,6 +125,8 @@ export default function TripMap({
     map.easeTo({ center: [lng, lat] })
   }, [selection])
 
+  const dropPin = useDropPin(mapRef, onAddStopAt !== undefined)
+
   return (
     <Map
       ref={mapRef}
@@ -133,6 +142,7 @@ export default function TripMap({
       style={{ width: '100%', height: '100%' }}
       // In case the route was ready before the map was.
       onLoad={fitToRoute}
+      {...dropPin.handlers}
     >
       <Source id="route" type="geojson" data={lines}>
         <Layer
@@ -163,8 +173,73 @@ export default function TripMap({
           onSelect={onSelectStop}
         />
       ))}
+      {dropPin.pin && onAddStopAt && (
+        <Popup
+          longitude={dropPin.pin.lng}
+          latitude={dropPin.pin.lat}
+          anchor="bottom"
+          className="map-add-popup"
+          // Closed by our own click handler, which ignores the click that
+          // can follow a long press.
+          closeOnClick={false}
+          closeButton={false}
+          onClose={dropPin.close}
+        >
+          <button
+            type="button"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') dropPin.close()
+            }}
+            onClick={() => {
+              const { lat, lng } = dropPin.pin ?? {}
+              dropPin.close()
+              if (lat !== undefined && lng !== undefined)
+                onAddStopAt({ lat, lng })
+            }}
+          >
+            Add stop here
+          </button>
+        </Popup>
+      )}
     </Map>
   )
+}
+
+/** Ignore map clicks this soon after the pin is dropped (see Popup above). */
+const IGNORE_CLICK_MS = 600
+
+/**
+ * A pin dropped by right-clicking (desktop) or long-pressing (touch) an
+ * empty spot on the map, while `enabled`. MapLibre turns a long press into a
+ * contextmenu event, and skips the one that ends a right-drag rotate. Presses
+ * on markers, popups and controls don't count: only ones on the bare map.
+ */
+function useDropPin(mapRef: RefObject<MapRef | null>, enabled: boolean) {
+  const [pin, setPin] = useState<(LatLng & { at: number }) | null>(null)
+  const close = useCallback(() => setPin(null), [])
+
+  if (!enabled) return { pin: null, close, handlers: {} }
+
+  const handlers = {
+    onContextMenu: (e: MapLayerMouseEvent) => {
+      const canvas = mapRef.current?.getCanvas()
+      // The long-press event isn't dispatched to an element, so check what
+      // is under the pointer rather than the event's target.
+      const { clientX, clientY } = e.originalEvent
+      if (!canvas || document.elementFromPoint(clientX, clientY) !== canvas)
+        return
+      // Instead of the browser's own menu.
+      e.originalEvent.preventDefault()
+      setPin({ ...mapPoint(e.lngLat.lat, e.lngLat.lng), at: Date.now() })
+    },
+    // Some browsers follow a long press with a click; don't let it close
+    // the popup it just opened.
+    onClick: () => {
+      if (pin && Date.now() - pin.at > IGNORE_CLICK_MS) close()
+    },
+  }
+  return { pin, close, handlers }
 }
 
 type LinePaint = NonNullable<LineLayerSpecification['paint']>
