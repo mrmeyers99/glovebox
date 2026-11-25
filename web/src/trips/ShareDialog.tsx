@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import type { Trip, TripInvite, TripRole } from '../lib/database.types'
 import { supabase } from '../lib/supabase'
@@ -7,10 +8,15 @@ import {
   INVITE_ROLES,
   inviteMessage,
   isDuplicateInvite,
+  leaveTripPrompt,
+  memberActions,
   memberRows,
   parseInvite,
   pendingInvites,
+  removeMemberPrompt,
   ROLE_LABELS,
+  withMemberRole,
+  withoutMember,
   type InviteRole,
   type MemberRow,
 } from './share'
@@ -23,8 +29,14 @@ type Props = {
 
 type Loaded = { members: MemberRow[]; invites: TripInvite[] }
 
-/** Modal listing a trip's members and pending invites; owners can invite. */
+type Confirming = { kind: 'remove'; member: MemberRow } | { kind: 'leave' }
+
+/**
+ * Modal listing a trip's members and pending invites. Owners invite, change
+ * roles, remove members and revoke invites; everyone else can leave.
+ */
 export function ShareDialog({ trip, role, onClose }: Props) {
+  const navigate = useNavigate()
   const { session } = useAuth()
   const userId = session?.user.id
   const isOwner = role === 'owner'
@@ -39,6 +51,11 @@ export function ShareDialog({ trip, role, onClose }: Props) {
   const [inviting, setInviting] = useState(false)
   const [sentTo, setSentTo] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+
+  // Managing members: one action at a time, keyed like 'role:<userId>'.
+  const [busy, setBusy] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState<Confirming | null>(null)
 
   useEffect(() => {
     const dialog = dialogRef.current
@@ -97,6 +114,103 @@ export function ShareDialog({ trip, role, onClose }: Props) {
     setSentTo(result.email)
   }
 
+  /** Refetch after a change, to pick up what others changed meanwhile. */
+  function refresh() {
+    setAttempt((n) => n + 1)
+  }
+
+  async function changeRole(member: MemberRow, newRole: InviteRole) {
+    setBusy(`role:${member.userId}`)
+    setActionError(null)
+    const { data, error } = await supabase
+      .from('trip_members')
+      .update({ role: newRole })
+      .eq('trip_id', trip.id)
+      .eq('user_id', member.userId)
+      .select('user_id')
+    setBusy(null)
+    if (error) {
+      setActionError(`Couldn't change ${member.name}'s role: ${error.message}`)
+    } else if (data.length === 0) {
+      setActionError(
+        `Couldn't change ${member.name}'s role. They may no longer be on this trip.`,
+      )
+    } else {
+      setLoaded((prev) =>
+        prev
+          ? {
+              ...prev,
+              members: withMemberRole(prev.members, member.userId, newRole),
+            }
+          : prev,
+      )
+    }
+    refresh()
+  }
+
+  async function removeMember(member: MemberRow) {
+    setBusy(`remove:${member.userId}`)
+    setActionError(null)
+    const { error } = await supabase
+      .from('trip_members')
+      .delete()
+      .eq('trip_id', trip.id)
+      .eq('user_id', member.userId)
+    setBusy(null)
+    setConfirming(null)
+    if (error) {
+      setActionError(`Couldn't remove ${member.name}: ${error.message}`)
+    } else {
+      setLoaded((prev) =>
+        prev
+          ? { ...prev, members: withoutMember(prev.members, member.userId) }
+          : prev,
+      )
+    }
+    refresh()
+  }
+
+  async function revokeInvite(invite: TripInvite) {
+    setBusy(`revoke:${invite.id}`)
+    setActionError(null)
+    const { error } = await supabase
+      .from('trip_invites')
+      .delete()
+      .eq('id', invite.id)
+    setBusy(null)
+    if (error) {
+      setActionError(
+        `Couldn't revoke the invite for ${invite.email}: ${error.message}`,
+      )
+    } else {
+      setLoaded((prev) =>
+        prev
+          ? { ...prev, invites: prev.invites.filter((i) => i.id !== invite.id) }
+          : prev,
+      )
+      if (sentTo === invite.email) setSentTo(null)
+    }
+    refresh()
+  }
+
+  async function leaveTrip() {
+    if (!userId) return
+    setBusy('leave')
+    setActionError(null)
+    const { error } = await supabase
+      .from('trip_members')
+      .delete()
+      .eq('trip_id', trip.id)
+      .eq('user_id', userId)
+    setBusy(null)
+    if (error) {
+      setConfirming(null)
+      setActionError(`Couldn't leave this trip: ${error.message}`)
+      return
+    }
+    navigate('/')
+  }
+
   const message = sentTo
     ? inviteMessage(trip.name, window.location.origin, sentTo)
     : null
@@ -141,16 +255,96 @@ export function ShareDialog({ trip, role, onClose }: Props) {
                 Members
               </h3>
               <ul className="share-list">
-                {loaded.members.map((m) => (
-                  <li key={m.userId}>
-                    <span>
-                      {m.name}
-                      {m.isYou && <span className="muted"> (you)</span>}
-                    </span>
-                    <span className="muted">{ROLE_LABELS[m.role]}</span>
-                  </li>
-                ))}
+                {loaded.members.map((m) => {
+                  const actions = memberActions(m, role)
+                  return (
+                    <li key={m.userId}>
+                      <span>
+                        {m.name}
+                        {m.isYou && <span className="muted"> (you)</span>}
+                      </span>
+                      <span className="share-row-actions">
+                        {actions.includes('changeRole') ? (
+                          <select
+                            aria-label={`Role for ${m.name}`}
+                            value={m.role}
+                            disabled={busy !== null}
+                            onChange={(e) =>
+                              changeRole(m, e.target.value as InviteRole)
+                            }
+                          >
+                            {INVITE_ROLES.map((r) => (
+                              <option key={r} value={r}>
+                                {ROLE_LABELS[r]}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="muted">{ROLE_LABELS[m.role]}</span>
+                        )}
+                        {actions.includes('remove') && (
+                          <button
+                            type="button"
+                            aria-label={`Remove ${m.name}`}
+                            disabled={busy !== null}
+                            onClick={() =>
+                              setConfirming({ kind: 'remove', member: m })
+                            }
+                          >
+                            Remove
+                          </button>
+                        )}
+                        {actions.includes('leave') && (
+                          <button
+                            type="button"
+                            disabled={busy !== null}
+                            onClick={() => setConfirming({ kind: 'leave' })}
+                          >
+                            Leave trip
+                          </button>
+                        )}
+                      </span>
+                    </li>
+                  )
+                })}
               </ul>
+              {confirming && (
+                <div className="share-confirm" role="alert">
+                  <p>
+                    {confirming.kind === 'remove'
+                      ? removeMemberPrompt(confirming.member.name)
+                      : leaveTripPrompt(trip.name)}
+                  </p>
+                  <div className="dialog-actions">
+                    <button
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={() => setConfirming(null)}
+                    >
+                      Cancel
+                    </button>
+                    {confirming.kind === 'remove' ? (
+                      <button
+                        type="button"
+                        className="danger"
+                        disabled={busy !== null}
+                        onClick={() => removeMember(confirming.member)}
+                      >
+                        {busy ? 'Removing…' : 'Remove'}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="danger"
+                        disabled={busy !== null}
+                        onClick={leaveTrip}
+                      >
+                        {busy ? 'Leaving…' : 'Leave trip'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </section>
 
             <section aria-labelledby="share-invites">
@@ -164,12 +358,30 @@ export function ShareDialog({ trip, role, onClose }: Props) {
                   {loaded.invites.map((i) => (
                     <li key={i.id}>
                       <span className="share-email">{i.email}</span>
-                      <span className="muted">{ROLE_LABELS[i.role]}</span>
+                      <span className="share-row-actions">
+                        <span className="muted">{ROLE_LABELS[i.role]}</span>
+                        {isOwner && (
+                          <button
+                            type="button"
+                            aria-label={`Revoke invite for ${i.email}`}
+                            disabled={busy !== null}
+                            onClick={() => revokeInvite(i)}
+                          >
+                            {busy === `revoke:${i.id}` ? 'Revoking…' : 'Revoke'}
+                          </button>
+                        )}
+                      </span>
                     </li>
                   ))}
                 </ul>
               )}
             </section>
+
+            {actionError && (
+              <p role="alert" className="error">
+                {actionError}
+              </p>
+            )}
           </>
         )}
 

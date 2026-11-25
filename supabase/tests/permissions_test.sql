@@ -100,6 +100,120 @@ do $$ begin
 end $$;
 reset role;
 
+-- Managing members. Dave has a trip of his own, to check that memberships
+-- can't be moved between trips.
+do $$ begin perform pg_temp.act_as('dave'); end $$;
+insert into public.trips (name) values ('Dave trip');
+reset role;
+do $$ begin
+  perform set_config('test.dave_trip', id::text, false)
+    from public.trips where name = 'Dave trip';
+end $$;
+
+-- Members other than the owner can't change roles, remove others or revoke invites.
+do $$ begin perform pg_temp.act_as('bob'); end $$;
+do $$ begin
+  update public.trip_members set role = 'editor'
+    where user_id = '33333333-3333-3333-3333-333333333333';
+  delete from public.trip_members where user_id = '33333333-3333-3333-3333-333333333333';
+  assert (select role from public.trip_members
+    where user_id = '33333333-3333-3333-3333-333333333333') = 'viewer',
+    'editor cannot change or remove another member';
+end $$;
+reset role;
+
+-- The owner changes roles, revokes invites and removes members.
+do $$ begin perform pg_temp.act_as('alice'); end $$;
+do $$
+declare v_trip uuid := (select id from public.trips where name = 'Cross country');
+begin
+  update public.trip_members set role = 'viewer'
+    where user_id = '22222222-2222-2222-2222-222222222222';
+  assert (select role from public.trip_members
+    where user_id = '22222222-2222-2222-2222-222222222222') = 'viewer',
+    'owner can demote an editor';
+  update public.trip_members set role = 'editor'
+    where user_id = '22222222-2222-2222-2222-222222222222';
+  assert (select role from public.trip_members
+    where user_id = '22222222-2222-2222-2222-222222222222') = 'editor',
+    'owner can promote a viewer';
+
+  begin
+    update public.trip_members set role = 'owner'
+      where user_id = '22222222-2222-2222-2222-222222222222';
+    assert false, 'owner cannot make another member owner';
+  exception when insufficient_privilege or unique_violation then null;
+  end;
+  update public.trip_members set role = 'editor' where user_id = auth.uid();
+  assert (select role from public.trip_members where user_id = auth.uid()) = 'owner',
+    'owner cannot change their own role';
+  begin
+    update public.trip_members set trip_id = current_setting('test.dave_trip')::uuid
+      where user_id = '22222222-2222-2222-2222-222222222222';
+    assert false, 'owner cannot move a membership to another trip';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.trip_members set user_id = '44444444-4444-4444-4444-444444444444'
+      where user_id = '22222222-2222-2222-2222-222222222222';
+    assert false, 'owner cannot reassign a membership to another user';
+  exception when insufficient_privilege then null;
+  end;
+
+  insert into public.trip_invites (trip_id, email, role)
+    values (v_trip, 'erin@example.com', 'viewer');
+  delete from public.trip_invites where email = 'erin@example.com';
+  assert not exists (select 1 from public.trip_invites where email = 'erin@example.com'),
+    'owner can revoke a pending invite';
+
+  delete from public.trip_members where user_id = '33333333-3333-3333-3333-333333333333';
+  assert not exists (select 1 from public.trip_members
+    where user_id = '33333333-3333-3333-3333-333333333333'), 'owner can remove a member';
+  assert not exists (select 1 from public.trip_invites where email = 'carol@example.com'),
+    'removing a member drops the invite they accepted';
+end $$;
+reset role;
+
+do $$ begin perform pg_temp.act_as('carol'); end $$;
+do $$ begin
+  assert (select count(*) from public.trips) = 0, 'removed member loses access to the trip';
+  assert (select count(*) from public.stops) = 0, 'removed member loses access to stops';
+  assert (select count(*) from public.trip_members) = 0, 'removed member sees no members';
+end $$;
+reset role;
+
+-- A removed member can be invited again.
+do $$ begin perform pg_temp.act_as('alice'); end $$;
+insert into public.trip_invites (trip_id, email, role)
+  select id, 'carol@example.com', 'viewer' from public.trips where name = 'Cross country';
+reset role;
+do $$ begin perform pg_temp.act_as('carol'); end $$;
+do $$ begin
+  assert public.accept_my_invites() = 1, 'removed member can rejoin with a new invite';
+  assert (select count(*) from public.trips) = 1, 'rejoined member sees the trip';
+end $$;
+reset role;
+
+-- A member can leave; afterwards they have no access.
+do $$ begin perform pg_temp.act_as('bob'); end $$;
+do $$ begin
+  delete from public.trip_members where user_id = auth.uid();
+  assert (select count(*) from public.trips) = 0, 'member who left loses access';
+  assert (select count(*) from public.trip_invites) = 0, 'member who left sees no invites';
+  assert public.accept_my_invites() = 0, 'leaving does not re-accept an old invite';
+end $$;
+reset role;
+
+do $$ begin perform pg_temp.act_as('alice'); end $$;
+do $$ begin
+  assert (select array_agg(user_id order by user_id) from public.trip_members
+      where trip_id = (select id from public.trips where name = 'Cross country'))
+    = array['11111111-1111-1111-1111-111111111111',
+            '33333333-3333-3333-3333-333333333333']::uuid[],
+    'owner sees the updated member list';
+end $$;
+reset role;
+
 -- Route cache: shared by everyone, written only by the route Edge Function
 -- (service role). Signed-in users can read it but not change it.
 set role service_role;

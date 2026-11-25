@@ -3,9 +3,14 @@ import {
   duplicateInviteMessage,
   inviteMessage,
   isDuplicateInvite,
+  leaveTripPrompt,
+  memberActions,
   memberRows,
   parseInvite,
   pendingInvites,
+  removeMemberPrompt,
+  withMemberRole,
+  withoutMember,
 } from './share'
 
 describe('memberRows', () => {
@@ -105,5 +110,81 @@ describe('inviteMessage', () => {
     expect(message).toContain('"Route 66"')
     expect(message).toContain('https://glovebox.example')
     expect(message).toContain('sam@example.com')
+  })
+})
+
+describe('memberActions', () => {
+  const owner = {
+    userId: 'u1',
+    name: 'Pat',
+    role: 'owner',
+    isYou: false,
+  } as const
+  const editor = {
+    userId: 'u2',
+    name: 'Zoe',
+    role: 'editor',
+    isYou: false,
+  } as const
+  const viewer = {
+    userId: 'u3',
+    name: 'Ann',
+    role: 'viewer',
+    isYou: false,
+  } as const
+
+  it('lets the owner change roles and remove everyone but themself', () => {
+    expect(memberActions({ ...owner, isYou: true }, 'owner')).toEqual([])
+    expect(memberActions(editor, 'owner')).toEqual(['changeRole', 'remove'])
+    expect(memberActions(viewer, 'owner')).toEqual(['changeRole', 'remove'])
+  })
+
+  it('lets other members leave, and nothing else', () => {
+    expect(memberActions({ ...editor, isYou: true }, 'editor')).toEqual([
+      'leave',
+    ])
+    expect(memberActions({ ...viewer, isYou: true }, 'viewer')).toEqual([
+      'leave',
+    ])
+    expect(memberActions(owner, 'editor')).toEqual([])
+    expect(memberActions(viewer, 'editor')).toEqual([])
+    expect(memberActions(editor, 'viewer')).toEqual([])
+  })
+})
+
+describe('withMemberRole and withoutMember', () => {
+  const rows = memberRows(
+    [
+      { user_id: 'u1', role: 'owner' },
+      { user_id: 'u2', role: 'editor' },
+      { user_id: 'u3', role: 'viewer' },
+    ],
+    [
+      { id: 'u1', display_name: 'Pat' },
+      { id: 'u2', display_name: 'Zoe' },
+      { id: 'u3', display_name: 'Ann' },
+    ],
+    'u1',
+  )
+
+  it('changes the role and re-sorts', () => {
+    const changed = withMemberRole(rows, 'u3', 'editor')
+    expect(changed.map((m) => [m.userId, m.role])).toEqual([
+      ['u1', 'owner'],
+      ['u3', 'editor'],
+      ['u2', 'editor'],
+    ])
+    expect(rows.find((m) => m.userId === 'u3')?.role).toBe('viewer')
+  })
+
+  it('removes a member', () => {
+    expect(withoutMember(rows, 'u2').map((m) => m.userId)).toEqual(['u1', 'u3'])
+  })
+})
+
+describe('confirmation prompts', () => {
+  it('name who is removed and which trip is left', () => {
+    expect(removeMemberPrompt('Zoe')).toContain('Remove Zoe')
+    expect(leaveTripPrompt('Route 66')).toContain('Leave "Route 66"')
   })
 })

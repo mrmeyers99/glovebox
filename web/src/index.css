@@ -575,6 +575,7 @@ button:disabled {
 .share-list li {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 1rem;
   padding: 0.375rem 0;
   border-bottom: 1px solid var(--border);
@@ -698,4 +699,38 @@ button:disabled {
   color: var(--muted);
   font-size: 0.875rem;
   overflow-wrap: anywhere;
+}
+
+/* Managing members */
+.share-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.share-row-actions select {
+  font: inherit;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: inherit;
+}
+
+.share-confirm {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.share-confirm p {
+  margin: 0 0 0.5rem;
+}
+
+button.danger {
+  background: var(--error);
+  border-color: var(--error);
+  color: var(--accent-fg);
 }
