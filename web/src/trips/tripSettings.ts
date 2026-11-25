@@ -93,6 +93,23 @@ export function parseTripSettings(
   }
 }
 
+/**
+ * The fields of `patch` that differ from `before` (the trip as the user saw
+ * it). Saving only these avoids reverting someone else's concurrent change
+ * to a field this user didn't touch.
+ */
+export function changedSettings(
+  patch: TripSettingsPatch,
+  before: TripSettingsPatch,
+): Partial<TripSettingsPatch> {
+  const changed: Partial<TripSettingsPatch> = {}
+  for (const key of Object.keys(patch) as (keyof TripSettingsPatch)[]) {
+    if (patch[key] !== before[key])
+      Object.assign(changed, { [key]: patch[key] })
+  }
+  return changed
+}
+
 /** True for a real calendar date in YYYY-MM-DD form. */
 function isValidDate(text: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false

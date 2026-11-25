@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Trip } from '../lib/database.types'
 import {
+  changedSettings,
   parseTripSettings,
   toSettingsInput,
   type TripSettingsInput,
@@ -116,5 +117,34 @@ describe('parseTripSettings', () => {
     expect(
       Object.keys(errorsFor({ name: '', mpg: '0', gasPrice: '0' })),
     ).toEqual(['name', 'mpg', 'gasPrice'])
+  })
+})
+
+describe('changedSettings', () => {
+  function patchFrom(input: Partial<TripSettingsInput>) {
+    const result = parseTripSettings({ ...toSettingsInput(trip), ...input })
+    if (!result.ok) throw new Error('invalid input')
+    return result.patch
+  }
+
+  it('is empty when nothing changed', () => {
+    expect(changedSettings(patchFrom({}), trip)).toEqual({})
+  })
+
+  it('keeps only the edited fields', () => {
+    // Someone else's mpg change made after the dialog opened isn't sent back.
+    expect(changedSettings(patchFrom({ name: 'Road trip' }), trip)).toEqual({
+      name: 'Road trip',
+    })
+  })
+
+  it('includes clearing and setting nullable fields', () => {
+    const priced = { ...trip, gas_price_per_gallon: 3.5 }
+    expect(
+      changedSettings(patchFrom({ startDate: '', gasPrice: '3.5' }), priced),
+    ).toEqual({ start_date: null })
+    expect(changedSettings(patchFrom({ gasPrice: '3.5' }), trip)).toEqual({
+      gas_price_per_gallon: 3.5,
+    })
   })
 })

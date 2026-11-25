@@ -8,6 +8,7 @@ import {
 import type { Trip } from '../lib/database.types'
 import { supabase } from '../lib/supabase'
 import {
+  changedSettings,
   parseTripSettings,
   toSettingsInput,
   type TripSettingsErrors,
@@ -24,7 +25,9 @@ type Props = {
 /** Modal form for a trip's name, start date, mpg and gas price. */
 export function TripSettingsDialog({ trip, dispatch, onClose }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null)
-  // Start from the trip as it was when the dialog opened.
+  // Start from the trip as it was when the dialog opened, and remember that
+  // snapshot so a save only sends the fields this user changed.
+  const [opened] = useState(() => trip)
   const [input, setInput] = useState(() => toSettingsInput(trip))
   const [errors, setErrors] = useState<TripSettingsErrors>({})
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -47,11 +50,16 @@ export function TripSettingsDialog({ trip, dispatch, onClose }: Props) {
       setErrors(result.errors)
       return
     }
+    const changes = changedSettings(result.patch, opened)
+    if (Object.keys(changes).length === 0) {
+      onClose()
+      return
+    }
     setSaving(true)
     setSaveError(null)
     const { data, error } = await supabase
       .from('trips')
-      .update(result.patch)
+      .update(changes)
       .eq('id', trip.id)
       .select()
       .single()
