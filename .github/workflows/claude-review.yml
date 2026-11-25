@@ -43,7 +43,19 @@ jobs:
             - Missing tests for new logic.
 
             Be concise. Skip style nits that Prettier or oxlint would catch.
-            If the PR looks good, say so briefly.
+
+            A blocking issue is a bug, security hole, data-loss risk, broken
+            convention from CLAUDE.md (e.g. an edited merged migration, a table
+            without RLS, a policy change without permission tests), or missing
+            tests for non-trivial new logic. Suggestions and minor nits are not
+            blocking.
+
+            When you are done, if you found no blocking issues, approve the PR
+            with exactly:
+              gh pr review ${{ github.event.pull_request.number }} --approve --body "<one-line summary>"
+            Non-blocking suggestions may still be left as comments. If there
+            are blocking issues, do not approve; say clearly in your top-level
+            comment which issues are blocking.
 
             Note: The PR branch is already checked out in the current working directory.
 
@@ -51,4 +63,4 @@ jobs:
             Use `mcp__github_inline_comment__create_inline_comment` (with `confirmed: true`) to highlight specific code issues.
             Only post GitHub comments - don't submit review text as messages.
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr review ${{ github.event.pull_request.number }} --approve:*)"
