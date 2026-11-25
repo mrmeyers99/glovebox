@@ -7,6 +7,7 @@ import { MapPanel } from './MapPanel'
 import type { StopSelection } from './mapView'
 import { ShareDialog } from './ShareDialog'
 import { TripSettingsDialog } from './TripSettingsDialog'
+import { useReorderStop } from './useReorderStop'
 import { useTrip } from './useTrip'
 import { useTripSummary } from './useTripSummary'
 
@@ -26,6 +27,7 @@ export function TripPage() {
     reload,
     dispatch,
   } = useTrip(tripId)
+  const reorder = useReorderStop(dispatch)
   // Called before the early return below (hooks can't be conditional).
   const { summary, gasPriceKnown } = useTripSummary(trip, days, stops)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -105,6 +107,14 @@ export function TripPage() {
         className="trip-panel trip-panel-list"
         aria-label="Days and stops"
       >
+        {reorder.error && (
+          <p role="alert" className="error panel-alert">
+            {reorder.error}{' '}
+            <button type="button" onClick={reorder.clearError}>
+              Dismiss
+            </button>
+          </p>
+        )}
         <DayListPanel
           trip={trip}
           days={days}
@@ -114,6 +124,7 @@ export function TripPage() {
           selection={selection}
           onSelectStop={selectFromList}
           onAddStop={canEdit ? setAddStopDay : undefined}
+          onMoveStop={canEdit ? reorder.move : undefined}
         />
       </section>
       <section
