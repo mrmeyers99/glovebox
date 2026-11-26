@@ -1114,6 +1114,10 @@ button.danger-text {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
+.day-menu-button {
+  margin-left: auto;
+}
+
 .stop[data-menu-open] {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
@@ -1165,4 +1169,24 @@ button.danger-text {
 
 .stop-menu-item[data-danger] {
   color: var(--error);
+}
+
+/* Delete day: what happens to the day's stops. */
+.day-delete-choice {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  gap: 0.375rem;
+}
+
+.day-delete-choice legend {
+  margin-bottom: 0.375rem;
+  padding: 0;
+}
+
+.day-delete-choice label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: normal;
 }

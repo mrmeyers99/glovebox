@@ -2,7 +2,9 @@ import { useCallback, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { Stop, Trip } from '../lib/database.types'
 import type { LatLng } from '../lib/geocode'
+import { DeleteDayDialog, DayNotesDialog } from './DayDialogs'
 import { DayListPanel } from './DayListPanel'
+import { DayMenu } from './DayMenu'
 import { defaultDropDay } from './mapAdd'
 import { MapPanel } from './MapPanel'
 import type { StopSelection } from './mapView'
@@ -59,6 +61,20 @@ export function TripPage() {
     [],
   )
   const closeStopMenu = useCallback(() => setStopMenu(null), [])
+  // The open day menu, and the day dialog opened from it.
+  const [dayMenu, setDayMenu] = useState<{
+    dayId: string
+    anchor: MenuAnchor
+  } | null>(null)
+  const openDayMenu = useCallback(
+    (dayId: string, anchor: MenuAnchor) => setDayMenu({ dayId, anchor }),
+    [],
+  )
+  const closeDayMenu = useCallback(() => setDayMenu(null), [])
+  const [dayDialog, setDayDialog] = useState<{
+    type: 'notes' | 'delete'
+    dayId: string
+  } | null>(null)
   // The start or end being set (no stop) or changed.
   const [tripEnd, setTripEnd] = useState<{
     kind: TripEndKind
@@ -106,6 +122,15 @@ export function TripPage() {
     : undefined
   // Forget it too, rather than keep state for a menu that can't show.
   if (stopMenu && !menuStop && !loading) setStopMenu(null)
+  // Both close if the day is deleted meanwhile.
+  const menuDay = dayMenu ? days.find((d) => d.id === dayMenu.dayId) : undefined
+  if (dayMenu && !menuDay && !loading) setDayMenu(null)
+  const dialogDay = dayDialog
+    ? days.find((d) => d.id === dayDialog.dayId)
+    : undefined
+  if (dayDialog && !dialogDay && !loading) setDayDialog(null)
+  const dayNumberOf = (dayId: string) =>
+    summary.days.find((d) => d.dayId === dayId)?.dayNumber ?? 0
   const menuDays = useMemo(
     () => summary.days.map(({ dayId, dayNumber }) => ({ dayId, dayNumber })),
     [summary.days],
@@ -209,6 +234,8 @@ export function TripPage() {
           onSetTripEnd={canEdit ? openTripEnd : undefined}
           menuStopId={menuStop?.id ?? null}
           onOpenStopMenu={openStopMenu}
+          menuDayId={menuDay?.id ?? null}
+          onOpenDayMenu={canEdit ? openDayMenu : undefined}
           presence={presence.index}
         />
       </section>
@@ -249,6 +276,36 @@ export function TripPage() {
             setStopDialog({ type: 'delete', stopId: menuStop.id })
           }
           onClose={closeStopMenu}
+        />
+      )}
+      {dayMenu && menuDay && canEdit && (
+        <DayMenu
+          dayNumber={dayNumberOf(menuDay.id)}
+          anchor={dayMenu.anchor}
+          canDelete={days.length > 1}
+          onEditNotes={() => setDayDialog({ type: 'notes', dayId: menuDay.id })}
+          onInsertAfter={() => void stopUpdates.insertDayAfter(menuDay.id)}
+          onDelete={() => setDayDialog({ type: 'delete', dayId: menuDay.id })}
+          onClose={closeDayMenu}
+        />
+      )}
+      {dayDialog?.type === 'notes' && dialogDay && canEdit && (
+        <DayNotesDialog
+          key={dialogDay.id}
+          day={dialogDay}
+          dayNumber={dayNumberOf(dialogDay.id)}
+          dispatch={dispatch}
+          onClose={() => setDayDialog(null)}
+        />
+      )}
+      {dayDialog?.type === 'delete' && dialogDay && canEdit && (
+        <DeleteDayDialog
+          key={dialogDay.id}
+          day={dialogDay}
+          days={days}
+          stops={stops}
+          dispatch={dispatch}
+          onClose={() => setDayDialog(null)}
         />
       )}
       {stopDialogMode && (stopDialogMode.type === 'edit' || canEdit) && (

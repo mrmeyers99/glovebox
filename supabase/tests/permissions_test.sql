@@ -272,6 +272,83 @@ exception when insufficient_privilege then null;
 end $$;
 reset role;
 
+-- Deleting a day moves or deletes its stops first, in one transaction.
+do $$ begin perform pg_temp.act_as('alice'); end $$;
+do $$
+declare
+  v_trip uuid := (select id from public.trips where name = 'Cross country');
+  v_day1 uuid := (select id from public.days where trip_id = v_trip);
+  v_day2 uuid;
+  v_kept uuid;
+  v_gone uuid;
+  v_other uuid;
+begin
+  begin
+    perform public.delete_day(v_day1);
+    assert false, 'the only day cannot be deleted';
+  exception when check_violation then null;
+  end;
+
+  insert into public.days (trip_id, position) values (v_trip, 'a5') returning id into v_day2;
+  insert into public.stops (trip_id, day_id, position, name, lat, lng) values
+    (v_trip, v_day2, 'a0', 'Kept', 40, -75) returning id into v_kept;
+  insert into public.stops (trip_id, day_id, position, name, lat, lng) values
+    (v_trip, v_day2, 'a1', 'Gone', 40, -75) returning id into v_gone;
+  insert into public.stops (trip_id, day_id, position, name, lat, lng) values
+    (v_trip, v_day2, 'a2', 'Other', 40, -75) returning id into v_other;
+
+  begin
+    perform public.delete_day(v_day2,
+      jsonb_build_array(jsonb_build_object('id', v_kept, 'day_id', v_day1, 'position', 'b0')),
+      array[v_gone]);
+    assert false, 'a day with stops left on it cannot be deleted';
+  exception when foreign_key_violation then null;
+  end;
+  assert (select day_id from public.stops where id = v_kept) = v_day2,
+    'a failed delete moves nothing';
+  assert exists (select 1 from public.stops where id = v_gone),
+    'a failed delete deletes no stops';
+
+  assert (select count(*) from public.delete_day(v_day2,
+      jsonb_build_array(jsonb_build_object('id', v_kept, 'day_id', v_day1, 'position', 'b0')),
+      array[v_gone, v_other])) = 1, 'returns the moved stops';
+  assert not exists (select 1 from public.days where id = v_day2), 'day is deleted';
+  assert (select day_id from public.stops where id = v_kept) = v_day1, 'stop is moved';
+  assert not exists (select 1 from public.stops where id in (v_gone, v_other)),
+    'chosen stops are deleted';
+
+  delete from public.stops where id = v_kept;
+  insert into public.days (trip_id, position) values (v_trip, 'a5');
+end $$;
+reset role;
+
+-- A viewer can't delete days.
+do $$ begin perform pg_temp.act_as('carol'); end $$;
+do $$ begin
+  begin
+    perform public.delete_day((select id from public.days where position = 'a5'));
+    assert false, 'viewer cannot delete a day';
+  exception when no_data_found then null;
+  end;
+  assert (select count(*) from public.days) = 2, 'the day is still there';
+end $$;
+reset role;
+
+do $$ begin perform pg_temp.act_as('alice'); end $$;
+do $$ begin
+  perform public.delete_day((select id from public.days where position = 'a5'));
+  assert (select count(*) from public.days) = 1, 'an empty day is deleted';
+end $$;
+reset role;
+
+set role anon;
+do $$ begin
+  perform public.delete_day(gen_random_uuid());
+  assert false, 'anon cannot call delete_day';
+exception when insufficient_privilege then null;
+end $$;
+reset role;
+
 -- Route cache: shared by everyone, written only by the route Edge Function
 -- (service role). Signed-in users can read it but not change it.
 set role service_role;

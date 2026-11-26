@@ -3,24 +3,16 @@
 // a right-click or a long-press (see useStopMenuTrigger), in the day list now
 // and on map markers later.
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent,
-} from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import type { Stop } from '../lib/database.types'
 import {
   menuFocusIndex,
-  menuPosition,
   STOP_MENU_LABELS,
   stopMenuActions,
   type MenuAnchor,
 } from './stopMenu'
+import { useMenu } from './useMenu'
 
 export type StopMenuDay = { dayId: string; dayNumber: number }
 
@@ -62,23 +54,12 @@ export function StopMenu({
   onDelete,
   onClose,
 }: Props) {
-  const menuRef = useRef<HTMLDivElement>(null)
-  const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   // The main list, or the days to move to.
   const [view, setView] = useState<'main' | 'days'>('main')
-  const [focus, setFocus] = useState(0)
-  // Moved inside the viewport before it's painted (see below).
-  const [position, setPosition] = useState<CSSProperties>({
-    left: anchor.x,
-    top: anchor.y,
-  })
-
-  const close = useCallback(
-    (restoreFocus: boolean) => {
-      if (restoreFocus) anchor.returnFocus?.focus()
-      onClose()
-    },
-    [anchor, onClose],
+  const { menuRef, itemRefs, focus, setFocus, position, close } = useMenu(
+    anchor,
+    onClose,
+    view,
   )
 
   // Close first, so focus is back on the trigger before an action opens a
@@ -136,43 +117,6 @@ export function StopMenu({
             onSelect: run(() => onMoveToDay(null)),
           },
         ]
-
-  // Place the menu once its size is known, and again when its list changes.
-  useLayoutEffect(() => {
-    const menu = menuRef.current
-    if (!menu) return
-    const { width, height } = menu.getBoundingClientRect()
-    setPosition(
-      menuPosition(
-        anchor,
-        { width, height },
-        { width: window.innerWidth, height: window.innerHeight },
-      ),
-    )
-  }, [anchor, view])
-
-  useEffect(() => {
-    itemRefs.current[focus]?.focus()
-  }, [focus, view])
-
-  // Close on a press or scroll outside the menu, or when the window changes.
-  useEffect(() => {
-    const outside = (e: Event) => {
-      if (!(e.target instanceof Node && menuRef.current?.contains(e.target)))
-        close(false)
-    }
-    const dismiss = () => close(false)
-    document.addEventListener('pointerdown', outside, true)
-    document.addEventListener('scroll', outside, true)
-    window.addEventListener('resize', dismiss)
-    window.addEventListener('blur', dismiss)
-    return () => {
-      document.removeEventListener('pointerdown', outside, true)
-      document.removeEventListener('scroll', outside, true)
-      window.removeEventListener('resize', dismiss)
-      window.removeEventListener('blur', dismiss)
-    }
-  }, [close])
 
   function onKeyDown(e: KeyboardEvent) {
     const next = menuFocusIndex(e.key, focus, items.length)

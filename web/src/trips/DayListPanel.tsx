@@ -4,7 +4,8 @@
 // set or change the trip's start and end. Whichever stop ends up first on
 // Day 1 is the start, and last on the last day the end.
 // Each stop has a menu (StopMenu), opened from its "⋯" button, a
-// right-click or a long-press.
+// right-click or a long-press. For owners and editors, each day has a menu
+// too (DayMenu), from the "⋯" button on its header.
 
 import {
   DndContext,
@@ -70,6 +71,9 @@ export type SetTripEnd = (kind: TripEndKind, stop?: Stop) => void
 
 /** Opens stop `stopId`'s menu at `anchor`. */
 export type OpenStopMenu = (stopId: string, anchor: MenuAnchor) => void
+
+/** Opens day `dayId`'s menu at `anchor`. */
+export type OpenDayMenu = (dayId: string, anchor: MenuAnchor) => void
 
 /** What each draggable stop and drop zone is, on its dnd-kit `data`. */
 type DragData =
@@ -147,6 +151,8 @@ export function DayListPanel({
   onSetTripEnd,
   menuStopId,
   onOpenStopMenu,
+  menuDayId,
+  onOpenDayMenu,
   presence,
 }: {
   trip: Trip
@@ -171,6 +177,10 @@ export function DayListPanel({
   menuStopId?: string | null
   /** Gives each stop a menu (see StopMenu). */
   onOpenStopMenu?: OpenStopMenu
+  /** The day whose menu is open, if any. */
+  menuDayId?: string | null
+  /** Gives each day a menu (see DayMenu); pass only for owners and editors. */
+  onOpenDayMenu?: OpenDayMenu
   /** Who else is editing which stop or day, from usePresence. */
   presence?: PresenceIndex
 }) {
@@ -336,6 +346,8 @@ export function DayListPanel({
               onSetTripEnd={onSetTripEnd}
               menuStopId={menuStopId}
               onOpenStopMenu={onOpenStopMenu}
+              dayMenuOpen={menuDayId === day.dayId}
+              onOpenDayMenu={onOpenDayMenu}
               promptStart={i === 0 && missingEnds.has('start')}
               promptEnd={
                 i === summary.days.length - 1 && missingEnds.has('end')
@@ -397,6 +409,8 @@ function DayCard({
   onSetTripEnd,
   menuStopId,
   onOpenStopMenu,
+  dayMenuOpen,
+  onOpenDayMenu,
   promptStart,
   promptEnd,
   editors,
@@ -419,6 +433,9 @@ function DayCard({
   onSetTripEnd?: SetTripEnd
   menuStopId?: string | null
   onOpenStopMenu?: OpenStopMenu
+  /** This day's menu is open. */
+  dayMenuOpen?: boolean
+  onOpenDayMenu?: OpenDayMenu
   /** This is the first day and the trip has no start. */
   promptStart: boolean
   /** This is the last day and the trip has no end. */
@@ -459,6 +476,25 @@ function DayCard({
         {editors?.length ? (
           <EditingBadges peers={editors} verb="adding a stop" />
         ) : null}
+        {onOpenDayMenu && (
+          <button
+            type="button"
+            className="stop-menu-button day-menu-button"
+            aria-label={`Actions for Day ${summary.dayNumber}`}
+            aria-haspopup="menu"
+            aria-expanded={dayMenuOpen ?? false}
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect()
+              onOpenDayMenu(summary.dayId, {
+                x: rect.left,
+                y: rect.bottom,
+                returnFocus: e.currentTarget,
+              })
+            }}
+          >
+            ⋯
+          </button>
+        )}
       </header>
       {notes && <p className="day-notes">{notes}</p>}
 
