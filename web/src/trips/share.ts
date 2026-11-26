@@ -108,7 +108,8 @@ export function pendingInvites<
 }
 
 export type InviteResult =
-  { ok: true; email: string; role: InviteRole } | { ok: false; error: string }
+  | { ok: true; email: string; role: InviteRole }
+  | { ok: false; error: string }
 
 // A pragmatic check: something@something.tld, no spaces. The database only
 // requires lower case and something before the "@".

@@ -41,4 +41,6 @@ A pre-commit hook (husky + lint-staged) formats staged files and lints TypeScrip
   (the gateway JWT check is off). `adminClient()` bypasses RLS; use it only for caches, never trip data.
 - New and changed code needs 90%+ line coverage, components included. CI enforces this on PRs with
   `diff-cover` against the base branch (web and Edge Functions separately); untouched code isn't checked.
+- Colours come from tokens in `index.css`. Themes (`src/theme/theme.ts`, `:root[data-theme=…]` blocks)
+  override them for light and dark; a new colour token needs a value in every theme, both schemes.
 - Code style: Prettier (no semicolons, single quotes) and oxlint; don't hand-format.

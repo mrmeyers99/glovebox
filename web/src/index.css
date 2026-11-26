@@ -1,3 +1,18 @@
+/* Self-hosted faces for the themes below: latin subset, weights in use.
+   Browsers download a face only when the current theme uses it. */
+@import '@fontsource/barlow-condensed/latin-700.css';
+@import '@fontsource/barlow/latin-400.css';
+@import '@fontsource/barlow/latin-600.css';
+@import '@fontsource/overpass/latin-400.css';
+@import '@fontsource/overpass/latin-600.css';
+@import '@fontsource/overpass/latin-800.css';
+@import '@fontsource/fjalla-one/latin-400.css';
+@import '@fontsource/source-sans-3/latin-400.css';
+@import '@fontsource/source-sans-3/latin-600.css';
+@import '@fontsource/shrikhand/latin-400.css';
+@import '@fontsource/nunito-sans/latin-400.css';
+@import '@fontsource/nunito-sans/latin-700.css';
+
 :root {
   --bg: #fbfaf7;
   --fg: #1f2328;
@@ -6,6 +21,20 @@
   --accent: #b5532a;
   --accent-fg: #ffffff;
   --error: #b42318;
+
+  /* Theme tokens. Classic leaves the header and cards on the page colour;
+     the other themes (data-theme, see theme.ts) set their own below. */
+  --surface: var(--bg);
+  --header-bg: var(--bg);
+  --header-fg: var(--fg);
+  --header-art: none;
+  --highlight: var(--accent);
+  --badge-bg: var(--accent);
+  --badge-fg: var(--accent-fg);
+  --radius: 8px;
+  --font-text: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: var(--font-text);
+  --display-weight: 700;
 
   /* Day colours for map markers, cycling (DAY_COLOR_COUNT in mapView.ts).
      Light mode: deep fills under white text. */
@@ -30,12 +59,7 @@
   --presence-color-6: #4d7c0f;
 
   color-scheme: light dark;
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+  font-family: var(--font-text);
   line-height: 1.5;
   color: var(--fg);
   background: var(--bg);
@@ -83,6 +107,31 @@ body {
 
 a {
   color: var(--accent);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+}
+
+.theme-picker {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-inline-start: auto;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.theme-picker select {
+  font: inherit;
+  color: var(--fg);
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
 }
 
 input,
@@ -191,9 +240,27 @@ button:disabled {
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
   min-width: 0;
+  background:
+    var(--header-art) right bottom / auto 100% no-repeat,
+    var(--header-bg);
+  color: var(--header-fg);
+}
+
+.trip-header .trip-meta {
+  color: color-mix(in srgb, var(--header-fg) 75%, var(--header-bg));
+}
+
+.trip-header > button {
+  border-color: color-mix(in srgb, var(--header-fg) 35%, var(--header-bg));
+  background: var(--header-bg);
+}
+
+.trip-header .presence-avatar {
+  border-color: var(--header-bg);
 }
 
 .trip-back {
+  color: inherit;
   text-decoration: none;
   font-size: 1.25rem;
   padding: 0.25rem;
@@ -363,9 +430,10 @@ button:disabled {
 
 .day-card {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   padding: 0.75rem;
   min-width: 0;
+  background: var(--surface);
 }
 
 .day-header {
@@ -423,7 +491,7 @@ button:disabled {
   margin: 0 -0.5rem;
   padding-inline: 0.5rem;
   border-radius: 4px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  background: color-mix(in srgb, var(--highlight) 18%, transparent);
 }
 
 /* A button for keyboard selection, styled as the stop's name. Whatever
@@ -465,8 +533,8 @@ button:disabled {
   margin-right: 0.375rem;
   padding: 0 0.375rem;
   border-radius: 4px;
-  background: var(--accent);
-  color: var(--accent-fg);
+  background: var(--badge-bg);
+  color: var(--badge-fg);
   font-size: 0.75rem;
   font-weight: 600;
   vertical-align: 0.1em;
@@ -522,7 +590,7 @@ button:disabled {
 }
 
 .stop[data-dragging] {
-  background: var(--bg);
+  background: var(--surface);
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.2);
   border-radius: 4px;
 }
@@ -1189,4 +1257,230 @@ button.danger-text {
   align-items: center;
   gap: 0.5rem;
   font-weight: normal;
+}
+
+/* Themes (theme.ts). Each sets the tokens at the top of this file, light then
+   dark. Day colours must stay distinct from each other and from the header,
+   and readable under --marker-fg. */
+
+/* Road atlas: the fold-out map in the glovebox. */
+:root[data-theme='atlas'] {
+  --bg: #ffffff;
+  --fg: #1b1d21;
+  --muted: #5b6068;
+  --border: #e3ded0;
+  --surface: #fffdf4;
+  --accent: #c8102e;
+  --accent-fg: #ffffff;
+  --header-bg: #1f4fa3;
+  --header-fg: #ffffff;
+  --highlight: #f2c230;
+  --badge-bg: #1f4fa3;
+  --badge-fg: #ffffff;
+  --radius: 6px;
+  --font-text: 'Barlow', system-ui, sans-serif;
+  --font-display: 'Barlow Condensed', 'Barlow', system-ui, sans-serif;
+  --display-weight: 700;
+  --day-color-1: #1f4fa3;
+  --day-color-2: #c8102e;
+  --day-color-3: #2f7d32;
+  --day-color-4: #7a3fa0;
+  --day-color-5: #b35900;
+  --day-color-6: #00727a;
+  --day-color-7: #8a6d00;
+  --day-color-8: #a0306e;
+}
+
+/* Highway sign: green guide signs, read at speed. */
+:root[data-theme='sign'] {
+  --bg: #f3f5f3;
+  --fg: #0d1f17;
+  --muted: #4f5f57;
+  --border: #cfd9d3;
+  --surface: #ffffff;
+  --accent: #00653b;
+  --accent-fg: #ffffff;
+  --header-bg: #00653b;
+  --header-fg: #ffffff;
+  --highlight: #ffcc00;
+  --badge-bg: #ffcc00;
+  --badge-fg: #0d1f17;
+  --radius: 10px;
+  --font-text: 'Overpass', system-ui, sans-serif;
+  --font-display: var(--font-text);
+  --display-weight: 800;
+  --day-color-1: #1d5fbf;
+  --day-color-2: #c2410c;
+  --day-color-3: #7b3fa0;
+  --day-color-4: #8a6d00;
+  --day-color-5: #be123c;
+  --day-color-6: #0e7490;
+  --day-color-7: #4338ca;
+  --day-color-8: #9d4b00;
+}
+
+/* Park poster: screen-printed ridgelines and a sunset. */
+:root[data-theme='park'] {
+  --bg: #ffffff;
+  --fg: #1c2622;
+  --muted: #56635d;
+  --border: #dbe2dc;
+  --surface: #f4f7f3;
+  --accent: #c4521a;
+  --accent-fg: #ffffff;
+  --header-bg: #1e3a34;
+  --header-fg: #ffffff;
+  --header-art: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 80'%3E%3Ccircle cx='330' cy='30' r='12' fill='%23e0601f'/%3E%3Cpath d='M0 80V58Q80 30 160 50T300 40Q350 22 400 38V80Z' fill='%23354e49'/%3E%3Cpath d='M0 80V70Q90 50 190 66T340 58Q370 52 400 60V80Z' fill='%2362472d'/%3E%3C/svg%3E");
+  --highlight: #e0601f;
+  --badge-bg: #1e3a34;
+  --badge-fg: #ffffff;
+  --radius: 4px;
+  --font-text: 'Source Sans 3', system-ui, sans-serif;
+  --font-display: 'Fjalla One', 'Source Sans 3', system-ui, sans-serif;
+  --display-weight: 400;
+  --day-color-1: #1e6f8c;
+  --day-color-2: #c4521a;
+  --day-color-3: #4f7a28;
+  --day-color-4: #9b3d63;
+  --day-color-5: #6b4fa0;
+  --day-color-6: #8a6d00;
+  --day-color-7: #2f5f9e;
+  --day-color-8: #a0302e;
+}
+
+/* Motel postcard: pool teal, coral and sun yellow. */
+:root[data-theme='motel'] {
+  --bg: #ffffff;
+  --fg: #14282b;
+  --muted: #53666a;
+  --border: #d4e6e5;
+  --surface: #effaf8;
+  --accent: #c93e29;
+  --accent-fg: #ffffff;
+  --header-bg: #0e7c86;
+  --header-fg: #ffffff;
+  --highlight: #ffc93c;
+  --badge-bg: #ffc93c;
+  --badge-fg: #14282b;
+  --radius: 14px;
+  --font-text: 'Nunito Sans', system-ui, sans-serif;
+  --font-display: 'Shrikhand', 'Nunito Sans', system-ui, sans-serif;
+  --display-weight: 400;
+  --day-color-1: #0e7c86;
+  --day-color-2: #c93e29;
+  --day-color-3: #6a4fe0;
+  --day-color-4: #8f6200;
+  --day-color-5: #be185d;
+  --day-color-6: #2f7d32;
+  --day-color-7: #1d4ed8;
+  --day-color-8: #9d4b00;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='atlas'] {
+    --bg: #14171c;
+    --fg: #ece9e1;
+    --muted: #a4a9b1;
+    --border: #2e333b;
+    --surface: #1b1f26;
+    --accent: #ff6b6f;
+    --accent-fg: #14171c;
+    --header-bg: #10285a;
+    --badge-bg: #7fa8ff;
+    --badge-fg: #14171c;
+    --day-color-1: #7fa8ff;
+    --day-color-2: #ff6b6b;
+    --day-color-3: #6fd07a;
+    --day-color-4: #c79bf0;
+    --day-color-5: #fb923c;
+    --day-color-6: #22d3ee;
+    --day-color-7: #facc15;
+    --day-color-8: #f472b6;
+  }
+
+  :root[data-theme='sign'] {
+    --bg: #0c1511;
+    --fg: #e6efe9;
+    --muted: #9db0a5;
+    --border: #26372e;
+    --surface: #13201a;
+    --accent: #3fbf7f;
+    --accent-fg: #0c1511;
+    --header-bg: #00532f;
+    --highlight: #ffd23f;
+    --badge-bg: #ffd23f;
+    --badge-fg: #0c1511;
+    --day-color-1: #7cb0ff;
+    --day-color-2: #ff8a4c;
+    --day-color-3: #c79bf0;
+    --day-color-4: #f2c230;
+    --day-color-5: #fb7185;
+    --day-color-6: #22d3ee;
+    --day-color-7: #a5b4fc;
+    --day-color-8: #fdba74;
+  }
+
+  :root[data-theme='park'] {
+    --bg: #111a18;
+    --fg: #e9efe9;
+    --muted: #9fb0a8;
+    --border: #2a3a34;
+    --surface: #18241f;
+    --accent: #ff8a4c;
+    --accent-fg: #111a18;
+    --header-bg: #0b1714;
+    --header-art: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 80'%3E%3Ccircle cx='330' cy='30' r='12' fill='%23ff8a4c'/%3E%3Cpath d='M0 80V58Q80 30 160 50T300 40Q350 22 400 38V80Z' fill='%23232e2c'/%3E%3Cpath d='M0 80V70Q90 50 190 66T340 58Q370 52 400 60V80Z' fill='%23603f28'/%3E%3C/svg%3E");
+    --highlight: #ff8a4c;
+    --badge-bg: #5fae9a;
+    --badge-fg: #111a18;
+    --day-color-1: #6fc3e0;
+    --day-color-2: #ff8a4c;
+    --day-color-3: #9bd168;
+    --day-color-4: #e889b3;
+    --day-color-5: #b9a3f0;
+    --day-color-6: #facc15;
+    --day-color-7: #7cb0ff;
+    --day-color-8: #fb7185;
+  }
+
+  :root[data-theme='motel'] {
+    --bg: #0f1d20;
+    --fg: #f1f5f4;
+    --muted: #a3b6b8;
+    --border: #29424a;
+    --surface: #16292d;
+    --accent: #ff8a77;
+    --accent-fg: #0f1d20;
+    --header-bg: #0a3d43;
+    --badge-fg: #0f1d20;
+    --day-color-1: #4fd1d9;
+    --day-color-2: #ff8a77;
+    --day-color-3: #a996ff;
+    --day-color-4: #ffc93c;
+    --day-color-5: #f472b6;
+    --day-color-6: #4ade80;
+    --day-color-7: #7cb0ff;
+    --day-color-8: #fdba74;
+  }
+}
+
+/* Highway sign: each day's header is a small guide sign. */
+:root[data-theme='sign'] .day-header {
+  margin: -0.375rem -0.375rem 0;
+  padding: 0.25rem 0.625rem;
+  border-radius: calc(var(--radius) - 4px);
+  background: var(--header-bg);
+  color: var(--header-fg);
+  box-shadow:
+    inset 0 0 0 2px var(--header-bg),
+    inset 0 0 0 3px var(--header-fg);
+}
+
+:root[data-theme='sign'] .day-header time,
+:root[data-theme='sign'] .day-header .day-menu-button {
+  color: inherit;
+}
+
+:root[data-theme='sign'] .day-swatch {
+  box-shadow: 0 0 0 2px var(--header-fg);
 }

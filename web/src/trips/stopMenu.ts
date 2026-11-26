@@ -13,7 +13,12 @@ export type MenuAnchor = {
 }
 
 export type StopMenuAction =
-  'move' | 'skip' | 'unskip' | 'edit' | 'delete' | 'view'
+  | 'move'
+  | 'skip'
+  | 'unskip'
+  | 'edit'
+  | 'delete'
+  | 'view'
 
 /**
  * The actions `stop`'s menu offers, in order. Viewers can only view details.
