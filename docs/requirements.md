@@ -153,8 +153,23 @@ Notes:
    "+ Day N+1" zone; context menu (move to day, skip); notes and costs; map with route;
    leg/day/trip totals; national-average gas price; live sync between simultaneous editors.
 2. **Sharing**: email invites with roles; presence ("who's here", what they're editing).
-3. **Discovery**: suggested stops along the route (OpenStreetMap via Overpass, OpenTripMap,
-   Wikipedia/Wikidata, NPS, Recreation.gov), filtered by category and detour time.
+3. **Discovery**: suggested stops along the route, filtered by category and detour time.
+   Two suggestion types:
+   - **Attractions**: candidates come from OpenStreetMap tags (tourism, historic, parks,
+     natural features). They are ranked by signals from Wikidata (number of Wikipedia
+     language editions, photo), English Wikipedia pageviews and Wikimedia Commons photo
+     counts, as a percentile within their area so the best stop on an empty stretch still
+     shows. All sources allow storage; data is cached in our own tables (PostGIS).
+   - **Campgrounds**: OpenStreetMap (`tourism=camp_site` / `caravan_site`), Recreation.gov
+     (RIDB) and NPS. Suggested near the end of each day rather than along the whole route,
+     filtered by tent/RV, hookups and showers, sorted by distance from the day's last stop.
+     Campgrounds inside a park inherit that park's attraction ranking. Reservations and
+     availability link out to the operator.
+
+   Commercial place APIs (Foursquare, Yelp, Google) were ruled out: their terms forbid
+   storing ratings or using them in our own ranking. OpenTripMap was ruled out: its data
+   is a stale (about 2019) copy of OSM/Wikidata and its licence is non-commercial only.
+
 4. **Later**: mobile: first an installable web app (PWA) with offline access, then a native
    app via React Native (Expo) if needed, reusing the data and calculation code; regional gas prices (EIA by region); export to
    Google Maps / GPX; multiple cost items per stop; read-only public links.
