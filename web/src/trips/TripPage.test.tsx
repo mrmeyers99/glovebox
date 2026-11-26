@@ -70,13 +70,15 @@ const mocks = vi.hoisted(() => ({
   canEdit: true,
   move: vi.fn(),
   setSkipped: vi.fn(),
+  insertDayAfter: vi.fn(),
+  days: [] as Day[],
 }))
 
 vi.mock('./useTrip', () => ({
   useTrip: () => ({
     trip,
     role: mocks.canEdit ? 'editor' : 'viewer',
-    days,
+    days: mocks.days,
     stops: mocks.stops,
     canEdit: mocks.canEdit,
     loading: false,
@@ -100,6 +102,7 @@ vi.mock('./useMoveStop', () => ({
   useMoveStop: () => ({
     move: mocks.move,
     setSkipped: mocks.setSkipped,
+    insertDayAfter: mocks.insertDayAfter,
     error: null,
     clearError: () => {},
   }),
@@ -124,6 +127,8 @@ beforeAll(() => {
 })
 beforeEach(() => {
   mocks.stops = [diner, museum]
+  mocks.days = days
+  mocks.insertDayAfter.mockReset()
   mocks.canEdit = true
   mocks.move.mockReset()
   mocks.setSkipped.mockReset()
@@ -216,5 +221,67 @@ describe('TripPage stop menu', () => {
     mocks.stops = [diner]
     rerender()
     expect(screen.queryByRole('menu')).toBeNull()
+  })
+})
+
+describe('TripPage day menu', () => {
+  const openDayMenu = (n: number) =>
+    fireEvent.click(
+      screen.getByRole('button', { name: `Actions for Day ${n}` }),
+    )
+
+  it('inserts a day after the chosen one', () => {
+    renderPage()
+    openDayMenu(1)
+    screen.getByRole('menu', { name: 'Day 1 actions' })
+    expect(
+      screen
+        .getByRole('button', { name: 'Actions for Day 1' })
+        .getAttribute('aria-expanded'),
+    ).toBe('true')
+    pick('Insert day after')
+    expect(mocks.insertDayAfter).toHaveBeenCalledWith('d1')
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('opens the notes form, or asks before deleting the day', () => {
+    renderPage()
+    openDayMenu(2)
+    pick('Edit notes…')
+    screen.getByRole('heading', { name: 'Notes for Day 2' })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(
+      screen.queryByRole('heading', { name: 'Notes for Day 2' }),
+    ).toBeNull()
+
+    openDayMenu(1)
+    pick('Delete day…')
+    screen.getByRole('heading', { name: 'Delete Day 1?' })
+    fireEvent.click(screen.getByRole('button', { name: 'Keep it' }))
+    expect(screen.queryByRole('heading', { name: 'Delete Day 1?' })).toBeNull()
+  })
+
+  it('closes the menu and dialog if the day is deleted meanwhile', () => {
+    const { rerender } = renderPage()
+    openDayMenu(2)
+    mocks.days = [days[0]]
+    rerender()
+    expect(screen.queryByRole('menu')).toBeNull()
+
+    mocks.days = days
+    rerender()
+    openDayMenu(2)
+    pick('Delete day…')
+    mocks.days = [days[0]]
+    rerender()
+    expect(screen.queryByRole('heading', { name: 'Delete Day 2?' })).toBeNull()
+  })
+
+  it("isn't offered to viewers", () => {
+    mocks.canEdit = false
+    renderPage()
+    expect(
+      screen.queryByRole('button', { name: 'Actions for Day 1' }),
+    ).toBeNull()
   })
 })

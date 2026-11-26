@@ -9,6 +9,7 @@ import {
   type Placement,
   type SaveStopChanges,
 } from './moveStops'
+import { planInsertDay } from './dayActions'
 import { setStopSkipped, type SaveSkipped } from './skipStop'
 import type { TripAction } from './tripState'
 
@@ -33,8 +34,8 @@ const deleteDay: DeleteDay = async (dayId) =>
   supabase.from('days').delete().eq('id', dayId)
 
 /**
- * Move a stop to a new day and/or position, or skip or unskip it,
- * optimistically. `error` is the last failed change's message, cleared by the
+ * Move a stop to a new day and/or position, skip or unskip it, or insert a
+ * day after another (which can move the trip's end), optimistically. `error` is the last failed change's message, cleared by the
  * next change or `clearError`.
  */
 export function useMoveStop(
@@ -101,6 +102,33 @@ export function useMoveStop(
     [dispatch],
   )
 
+  const insertDayAfter = useCallback(
+    async (dayId: string) => {
+      setError(null)
+      const plan = planInsertDay(days, stops, dayId, crypto.randomUUID())
+      if (!plan) return
+      const id = ++counter.current
+      const moving = plan.changes.map((c) => c.id)
+      for (const stopId of moving) latest.current.set(stopId, id)
+      const isLatest = (stopId: string) => latest.current.get(stopId) === id
+
+      const message = await applyMove(plan, {
+        stops,
+        dispatch,
+        insertDay,
+        deleteDay,
+        save: saveChanges,
+        isLatest,
+      })
+
+      for (const stopId of moving) {
+        if (isLatest(stopId)) latest.current.delete(stopId)
+      }
+      if (message) setError(`Couldn't insert a day: ${message}`)
+    },
+    [dispatch, days, stops],
+  )
+
   const clearError = useCallback(() => setError(null), [])
-  return { move, setSkipped, error, clearError }
+  return { move, setSkipped, insertDayAfter, error, clearError }
 }

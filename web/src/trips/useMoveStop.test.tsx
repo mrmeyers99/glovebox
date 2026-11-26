@@ -188,4 +188,59 @@ describe('useMoveStop', () => {
     expect(deleted).toHaveBeenCalledOnce()
     expect(hook.result.current.error).toBe("Couldn't move Stop a: denied")
   })
+
+  it('inserts a day after another, bringing the end along after the last', async () => {
+    const inserted = vi.fn()
+    from.mockReturnValue({
+      insert: (day: Day) => ({
+        select: () => ({
+          single: () => {
+            inserted(day)
+            return Promise.resolve({ data: { ...day }, error: null })
+          },
+        }),
+      }),
+    })
+    rpc.mockResolvedValue({ data: [], error: null })
+    const { hook } = setup()
+
+    await act(() => hook.result.current.insertDayAfter('d1'))
+    expect(inserted).toHaveBeenCalledOnce()
+    expect(rpc).not.toHaveBeenCalled()
+
+    await act(() => hook.result.current.insertDayAfter('d2'))
+    expect(inserted).toHaveBeenCalledTimes(2)
+    expect(rpc).toHaveBeenCalledOnce()
+    const [name, args] = rpc.mock.calls[0]
+    expect(name).toBe('move_stops')
+    expect(args.p_moves).toEqual([
+      expect.objectContaining({
+        id: 'end',
+        day_id: inserted.mock.calls[1][0].id,
+      }),
+    ])
+    expect(hook.result.current.error).toBeNull()
+  })
+
+  it('reports a day that could not be inserted', async () => {
+    from.mockReturnValue({
+      insert: () => ({
+        select: () => ({
+          single: () =>
+            Promise.resolve({ data: null, error: { message: 'denied' } }),
+        }),
+      }),
+    })
+    const { hook, dispatch } = setup()
+
+    await act(() => hook.result.current.insertDayAfter('d1'))
+    expect(hook.result.current.error).toBe("Couldn't insert a day: denied")
+    expect(dispatch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ type: 'removeDay' }),
+    )
+
+    dispatch.mockReset()
+    await act(() => hook.result.current.insertDayAfter('gone'))
+    expect(dispatch).not.toHaveBeenCalled()
+  })
 })

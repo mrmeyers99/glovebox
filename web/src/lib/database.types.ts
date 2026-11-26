@@ -142,6 +142,20 @@ export type Database = {
         }
         Returns: Stop[]
       }
+      delete_day: {
+        Args: {
+          p_day_id: string
+          /** Applied like move_stops' p_moves. */
+          p_moves?: {
+            id: string
+            day_id?: string
+            position?: string
+            kind?: StopKind
+          }[]
+          p_delete_stop_ids?: string[]
+        }
+        Returns: Stop[]
+      }
     }
     Enums: {
       trip_role: TripRole
