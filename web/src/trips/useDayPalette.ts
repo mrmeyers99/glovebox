@@ -1,16 +1,22 @@
 // The day colours (`--day-color-N` in index.css) as concrete CSS colours, for
-// drawing on the map canvas, which can't read CSS variables. Re-read when the
-// colour scheme or theme changes, since each theme has light and dark variants.
+// drawing on the map canvas, which can't read CSS variables. The tokens are
+// light-dark() pairs, so each is resolved through a probe element's computed
+// colour. Re-read when the system scheme, theme or chosen mode changes.
 
 import { useEffect, useState } from 'react'
 import { THEME_CHANGE_EVENT } from '../theme/theme'
 import { DAY_COLOR_COUNT } from './mapView'
 
 function readPalette(): string[] {
-  const style = getComputedStyle(document.documentElement)
-  return Array.from({ length: DAY_COLOR_COUNT }, (_, i) =>
-    style.getPropertyValue(`--day-color-${i + 1}`).trim(),
-  )
+  const probe = document.createElement('span')
+  probe.hidden = true
+  document.documentElement.append(probe)
+  const colors = Array.from({ length: DAY_COLOR_COUNT }, (_, i) => {
+    probe.style.color = `var(--day-color-${i + 1})`
+    return getComputedStyle(probe).color
+  })
+  probe.remove()
+  return colors
 }
 
 export function useDayPalette(): string[] {
