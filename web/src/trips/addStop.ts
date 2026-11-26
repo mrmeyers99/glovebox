@@ -45,8 +45,7 @@ export type StopFormErrors = Partial<
 >
 
 export type StopFormResult =
-  | { ok: true; fields: StopFields }
-  | { ok: false; errors: StopFormErrors }
+  { ok: true; fields: StopFields } | { ok: false; errors: StopFormErrors }
 
 export const COST_CATEGORIES: { value: CostCategory; label: string }[] = [
   { value: 'lodging', label: 'Lodging' },

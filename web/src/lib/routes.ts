@@ -24,8 +24,7 @@ export interface RoutePair {
  * retried the next time the trip's legs change.
  */
 export type RouteEntry =
-  | { status: 'ok'; route: RouteInfo }
-  | { status: 'failed'; final: boolean }
+  { status: 'ok'; route: RouteInfo } | { status: 'failed'; final: boolean }
 
 /** The route function accepts at most this many pairs per request. */
 export const MAX_PAIRS_PER_REQUEST = 50
