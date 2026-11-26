@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import type { Trip } from '../lib/database.types'
 import { supabase } from '../lib/supabase'
+import { ThemePicker } from '../theme/ThemePicker'
 
 export function TripsPage() {
   const navigate = useNavigate()
@@ -43,6 +44,7 @@ export function TripsPage() {
     <main className="page">
       <header className="page-header">
         <h1>Your trips</h1>
+        <ThemePicker />
         <button type="button" onClick={() => supabase.auth.signOut()}>
           Sign out
         </button>
