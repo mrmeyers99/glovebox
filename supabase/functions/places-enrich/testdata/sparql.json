@@ -1,0 +1,85 @@
+{
+  "head": {
+    "vars": ["item", "sitelinks", "image", "commonsCategory", "article"]
+  },
+  "results": {
+    "bindings": [
+      {
+        "item": {
+          "type": "uri",
+          "value": "http://www.wikidata.org/entity/Q1135328"
+        },
+        "sitelinks": {
+          "datatype": "http://www.w3.org/2001/XMLSchema#integer",
+          "type": "literal",
+          "value": "14"
+        },
+        "image": {
+          "type": "uri",
+          "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Corn%20Palace%202017.jpg"
+        },
+        "commonsCategory": { "type": "literal", "value": "Corn Palace" },
+        "article": {
+          "type": "uri",
+          "value": "https://en.wikipedia.org/wiki/Corn_Palace"
+        }
+      },
+      {
+        "item": {
+          "type": "uri",
+          "value": "http://www.wikidata.org/entity/Q1135328"
+        },
+        "sitelinks": {
+          "datatype": "http://www.w3.org/2001/XMLSchema#integer",
+          "type": "literal",
+          "value": "14"
+        },
+        "image": {
+          "type": "uri",
+          "value": "http://commons.wikimedia.org/wiki/Special:FilePath/Corn%20Palace%20at%20night.jpg"
+        },
+        "commonsCategory": { "type": "literal", "value": "Corn Palace" },
+        "article": {
+          "type": "uri",
+          "value": "https://en.wikipedia.org/wiki/Corn_Palace"
+        }
+      },
+      {
+        "item": {
+          "type": "uri",
+          "value": "http://www.wikidata.org/entity/Q5432100"
+        },
+        "sitelinks": {
+          "datatype": "http://www.w3.org/2001/XMLSchema#integer",
+          "type": "literal",
+          "value": "2"
+        },
+        "article": {
+          "type": "uri",
+          "value": "https://en.wikipedia.org/wiki/Prehistoric_Indian_Village%2FMitchell"
+        }
+      },
+      {
+        "item": {
+          "type": "uri",
+          "value": "http://www.wikidata.org/entity/Q7000001"
+        },
+        "sitelinks": {
+          "datatype": "http://www.w3.org/2001/XMLSchema#integer",
+          "type": "literal",
+          "value": "0"
+        },
+        "commonsCategory": {
+          "type": "literal",
+          "value": "Mitchell water tower"
+        }
+      },
+      {
+        "item": {
+          "type": "uri",
+          "value": "http://www.wikidata.org/entity/Q999999999"
+        }
+      }
+    ]
+  }
+}

@@ -745,6 +745,107 @@ do $$ begin
     and (select headers ->> 'apikey' from net.calls) = 'sb_secret_x',
     'calls places-worker with the secret key';
 end $$;
+
+-- Enrichment worker: claiming due places, pausing, storing results, and the
+-- pg_cron entry point (run here as the database owner, like pg_cron).
+update public.places set enriched_at = now(), enrich_next_attempt_at = null;
+insert into public.place_tiles (tile_key) values ('30.0_30.0') on conflict do nothing;
+insert into public.places (source, source_id, wikidata, name, kind, category, location,
+    enriched_at, enrich_next_attempt_at) values
+  ('osm', 'node/30', 'Q30', 'New Linked',   'attraction', 'tourism=museum', extensions.st_point(30.1, 30.1, 4326)::extensions.geography, null, null),
+  ('osm', 'node/31', 'Q31', 'Stale Linked', 'attraction', 'tourism=museum', extensions.st_point(30.1, 30.1, 4326)::extensions.geography, now() - interval '91 days', null),
+  ('osm', 'node/32', 'Q32', 'Fresh Linked', 'attraction', 'tourism=museum', extensions.st_point(30.1, 30.1, 4326)::extensions.geography, now() - interval '89 days', null),
+  ('osm', 'node/33', 'Q33', 'Backed off',   'attraction', 'tourism=museum', extensions.st_point(30.1, 30.1, 4326)::extensions.geography, null, now() + interval '1 hour'),
+  ('osm', 'node/34', 'Q34', 'Lease expired', 'attraction', 'tourism=museum', extensions.st_point(30.1, 30.1, 4326)::extensions.geography, null, now() - interval '1 second'),
+  ('osm', 'node/35', null,  'Plain',        'attraction', 'historic=fort',  extensions.st_point(30.1, 30.1, 4326)::extensions.geography, null, null);
+do $$
+declare
+  v_claimed text[];
+begin
+  assert public.invoke_places_enrich() = 42, 'calls the enrichment worker when places are due';
+  assert (select url from net.calls order by ctid desc limit 1)
+    = 'https://ref.supabase.co/functions/v1/places-enrich', 'calls places-enrich';
+
+  insert into public.worker_pauses values ('places-enrich', now() + interval '1 minute', 'HTTP 429');
+  select array_agg(source_id order by source_id) into v_claimed
+    from public.places p where p.id in (select id from public.claim_places_to_enrich(10, 10));
+  assert v_claimed = array['node/35'],
+    'while paused, only places without a Wikidata item are claimed: ' || coalesce(v_claimed::text, 'none');
+  assert public.invoke_places_enrich() is null, 'no call while paused and only linked places are due';
+
+  update public.worker_pauses set paused_until = now() - interval '1 second';
+  select array_agg(source_id order by source_id) into v_claimed
+    from public.places p where p.id in (select id from public.claim_places_to_enrich(2, 10));
+  assert v_claimed = array['node/30', 'node/34'],
+    'claims never-enriched places first, up to the limit: ' || coalesce(v_claimed::text, 'none');
+  select array_agg(source_id order by source_id) into v_claimed
+    from public.places p where p.id in (select id from public.claim_places_to_enrich(10, 10));
+  assert v_claimed = array['node/31'],
+    'then places enriched over 90 days ago; not fresh, backed-off or claimed ones: '
+    || coalesce(v_claimed::text, 'none');
+  assert (select enrich_next_attempt_at from public.places where source_id = 'node/31')
+    between now() + interval '4 minutes' and now() + interval '6 minutes',
+    'a claimed place is held for a 5-minute lease';
+  assert not exists (select 1 from public.claim_places_to_enrich(0, 0)), 'claim of 0 takes nothing';
+  assert public.invoke_places_enrich() is null, 'no call while nothing is due';
+
+  update public.places set wikidata = 'Q300' where source_id = 'node/30';
+  assert public.store_place_enrichment((select jsonb_agg(e) from (values
+    (jsonb_build_object('id', (select id from public.places where source_id = 'node/30'),
+      'wikidata', 'Q30', 'sitelinks', 3, 'score', 1)),
+    (jsonb_build_object('id', (select id from public.places where source_id = 'node/31'),
+      'wikidata', 'Q31', 'sitelinks', 12, 'pageviews_month', 9000, 'commons_files', 80,
+      'image_file', 'Corn Palace.jpg', 'image_credit', 'Jane', 'image_license', 'CC BY-SA 4.0',
+      'score', 5.5)),
+    (jsonb_build_object('id', (select id from public.places where source_id = 'node/35'),
+      'wikidata', null, 'score', 0.3))
+  ) as t(e))) = 2, 'stores two places';
+  assert (select score from public.places where source_id = 'node/31') = 5.5
+    and (select image_license from public.places where source_id = 'node/31') = 'CC BY-SA 4.0'
+    and (select pageviews_month from public.places where source_id = 'node/31') = 9000
+    and (select enriched_at from public.places where source_id = 'node/31') is not null
+    and (select enrich_next_attempt_at from public.places where source_id = 'node/31') is null,
+    'storing saves the signals and score and marks the place enriched';
+  assert (select score from public.places where source_id = 'node/35') = 0.3
+    and (select sitelinks from public.places where source_id = 'node/35') is null,
+    'a place without Wikidata is scored';
+  assert (select enriched_at from public.places where source_id = 'node/30') is null,
+    'a place whose Wikidata item changed while it was enriched is not stored';
+  assert public.store_place_enrichment('[]') = 0, 'storing nothing stores nothing';
+end $$;
+
+do $$ begin perform pg_temp.act_as('alice'); end $$;
+do $$ begin
+  begin
+    perform public.claim_places_to_enrich(1, 1);
+    assert false, 'signed-in user cannot claim places to enrich';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.store_place_enrichment('[]');
+    assert false, 'signed-in user cannot store enrichment';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.invoke_places_enrich();
+    assert false, 'signed-in user cannot start the enrichment worker';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform 1 from public.worker_pauses;
+    assert false, 'signed-in user cannot read worker_pauses';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set role service_role;
+do $$ begin
+  perform public.invoke_places_enrich();
+  assert false, 'only the database owner (pg_cron) starts the enrichment worker';
+exception when insufficient_privilege then null;
+end $$;
+reset role;
+
 drop schema vault cascade;
 drop schema net cascade;
 

@@ -16,6 +16,7 @@
 // with a growing back-off (retryDelayMs).
 import { requireServiceRole } from '../_shared/auth.ts'
 import { handle, HttpError, json } from '../_shared/http.ts'
+import { contactUserAgent } from '../_shared/user_agent.ts'
 import { dedupe } from '../_shared/places/mod.ts'
 import {
   buildQuery,
@@ -54,12 +55,7 @@ export function createHandler({
     if (req.method !== 'POST') throw new HttpError(405, 'Use POST')
     await req.body?.cancel()
 
-    const contact = Deno.env.get('CONTACT_EMAIL')?.trim()
-    if (!contact) {
-      console.error('CONTACT_EMAIL is not set')
-      throw new HttpError(503, 'CONTACT_EMAIL is not set')
-    }
-    const userAgent = `Glovebox/1.0 (road-trip planner; ${contact})`
+    const userAgent = contactUserAgent()
 
     const started = now()
     const deadline = started + RUN_BUDGET_MS

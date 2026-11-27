@@ -125,16 +125,26 @@ export type Place = {
   location: string
   tile_key: string // generated from location
   tags: Record<string, string>
+  /** English Wikipedia user views per month, averaged over 12 months. */
   pageviews_month: number | null
   sitelinks: number | null
   commons_files: number | null
   enriched_at: string | null
+  /** When a claimed place's lease expires, or a failed enrichment may be retried. */
+  enrich_next_attempt_at: string | null
   image_file: string | null
   image_credit: string | null
   image_license: string | null
   score: number | null
   parent_place_id: number | null
   fetched_at: string
+}
+
+// A background worker paused by a rate limit (service role only).
+export type WorkerPause = {
+  worker: string
+  paused_until: string
+  reason: string | null
 }
 
 export type Database = {
@@ -171,6 +181,7 @@ export type Database = {
       // Written only by Edge Functions (service role).
       place_tiles: Table<PlaceTile, never, never>
       places: Table<Place, never, never>
+      worker_pauses: Table<WorkerPause, never, never>
     }
     Views: Record<never, never>
     Functions: {
@@ -196,6 +207,32 @@ export type Database = {
             tags?: Record<string, string>
             parent_source_id?: string | null
           }[]
+        }
+        Returns: number
+      }
+      /** Service role only (the places-enrich Edge Function). */
+      claim_places_to_enrich: {
+        Args: {
+          p_linked_limit?: number
+          p_plain_limit?: number
+          p_lease?: string
+        }
+        Returns: Pick<Place, 'id' | 'wikidata' | 'category'>[]
+      }
+      /** Service role only (the places-enrich Edge Function). */
+      store_place_enrichment: {
+        Args: {
+          p_places: (Pick<
+            Place,
+            | 'id'
+            | 'wikidata'
+            | 'sitelinks'
+            | 'pageviews_month'
+            | 'commons_files'
+            | 'image_file'
+            | 'image_credit'
+            | 'image_license'
+          > & { score: number })[]
         }
         Returns: number
       }

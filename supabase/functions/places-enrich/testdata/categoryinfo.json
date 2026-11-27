@@ -1,0 +1,21 @@
+{
+  "batchcomplete": true,
+  "query": {
+    "normalized": [
+      {
+        "fromencoded": false,
+        "from": "Category:Corn_Palace",
+        "to": "Category:Corn Palace"
+      }
+    ],
+    "pages": [
+      {
+        "pageid": 1,
+        "ns": 14,
+        "title": "Category:Corn Palace",
+        "categoryinfo": { "size": 130, "pages": 0, "files": 120, "subcats": 10 }
+      },
+      { "ns": 14, "title": "Category:Mitchell water tower", "missing": true }
+    ]
+  }
+}
