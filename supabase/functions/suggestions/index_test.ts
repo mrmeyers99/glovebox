@@ -30,7 +30,11 @@ const corn: PlaceRow = {
  * An in-memory place_tiles queue (insert if missing, never change an existing
  * tile) and places table, recording what each request read.
  */
-function setup(tiles: Record<string, TileStatus> = {}, rows = [corn]) {
+function setup(
+  tiles: Record<string, TileStatus> = {},
+  rows = [corn],
+  scoringTiles: string[] = [],
+) {
   const table = new Map(Object.entries(tiles))
   const loads: { supabase: SupabaseClient; tiles: string[]; kind: string }[] =
     []
@@ -43,6 +47,11 @@ function setup(tiles: Record<string, TileStatus> = {}, rows = [corn]) {
       loads.push({ supabase, tiles: keys, kind })
       return Promise.resolve(
         rows.filter((r) => keys.includes(r.tile_key) && r.kind === kind),
+      )
+    },
+    scoring(_supabase, keys) {
+      return Promise.resolve(
+        new Set(scoringTiles.filter((key) => keys.includes(key))),
       )
     },
   })
@@ -133,9 +142,25 @@ Deno.test(
   async () => {
     const { handler, table } = setup({ [A]: 'done', [B]: 'failed' })
     const res = await post(handler, { tiles: [A, B], kind: 'campground' })
-    assertEquals(res.body, { places: [], pending: [], failed: [B] })
+    assertEquals(res.body, {
+      places: [],
+      pending: [],
+      failed: [B],
+      scoring: [],
+    })
     assertEquals(table.get(A), 'done')
     assertEquals(table.get(B), 'failed')
+  },
+)
+
+Deno.test(
+  'reports done tiles whose places are still being scored',
+  async () => {
+    const { handler } = setup({ [A]: 'done' }, [corn], [A, B])
+    const res = await post(handler, { tiles: [A, B], kind: 'attraction' })
+    assertEquals(res.body.scoring, [A])
+    assertEquals(res.body.pending, [B])
+    assertEquals(res.body.places.length, 1)
   },
 )
 
@@ -143,6 +168,6 @@ Deno.test('the deployed handler answers an empty request', async () => {
   const res = await post(defaultHandler, { tiles: [], kind: 'attraction' })
   assertEquals(res, {
     status: 200,
-    body: { places: [], pending: [], failed: [] },
+    body: { places: [], pending: [], failed: [], scoring: [] },
   })
 })

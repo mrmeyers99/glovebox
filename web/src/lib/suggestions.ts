@@ -2,7 +2,8 @@
 // Discovery): asking for the ranked places in a set of map tiles, reading the
 // response, and choosing which places to draw at the current zoom. The
 // function answers only from our own cache; tiles it hasn't filled yet come
-// back as `pending` and are asked for again later.
+// back as `pending`, and filled tiles whose places aren't all scored yet as
+// `scoring`; both are asked for again later.
 
 import { formatMiles } from './format'
 import { supabase } from './supabase'
@@ -41,6 +42,11 @@ export interface SuggestionsResult {
   pending: string[]
   /** Tiles the fill worker couldn't fetch (it retries them itself). */
   failed: string[]
+  /**
+   * Filled tiles with places still waiting for a score: their scored places
+   * are in `places`, and more may come. Ask again later.
+   */
+  scoring: string[]
 }
 
 /** The function accepts at most this many tiles per request. */
@@ -112,6 +118,7 @@ export function parseSuggestionsResponse(body: unknown): SuggestionsResult {
       .filter((place): place is Suggestion => place !== null),
     pending: stringList(body.pending),
     failed: stringList(body.failed),
+    scoring: stringList(body.scoring),
   }
 }
 
@@ -140,6 +147,7 @@ export async function fetchSuggestions(
     places: results.flatMap((r) => r.places).sort(bestFirst),
     pending: results.flatMap((r) => r.pending),
     failed: results.flatMap((r) => r.failed),
+    scoring: results.flatMap((r) => r.scoring),
   }
 }
 

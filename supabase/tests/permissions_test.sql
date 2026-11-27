@@ -569,6 +569,9 @@ begin
     'suggestion_places returns scored places in done tiles, with lat/lng';
   assert (select count(*) from public.suggestion_places(array['43.5_-98.5'], 'campground')) = 0,
     'suggestion_places filters by kind';
+  assert not exists (select 1
+      from public.scoring_place_tiles(array['43.5_-98.5', '42.0_-92.5'], 'attraction')),
+    'scoring_place_tiles: a done tile with every place scored, and a tile not done, are not scoring';
   begin
     perform public.queue_place_tiles(array['40.0_-75.0']);
     assert false, 'signed-in user cannot call queue_place_tiles';
@@ -577,10 +580,44 @@ begin
 end $$;
 reset role;
 
+-- A done tile with an unscored place is still scoring, unless that place is
+-- backed off for long.
+set role service_role;
+update public.place_tiles set status = 'done', fetched_at = now()
+  where tile_key = '42.0_-92.5';
+reset role;
+do $$ begin perform pg_temp.act_as('dave'); end $$;
+do $$ begin
+  assert (select array_agg(tile_key)
+      from public.scoring_place_tiles(array['43.5_-98.5', '42.0_-92.5'], 'attraction')) =
+    array['42.0_-92.5'], 'scoring_place_tiles returns done tiles with unscored places, once';
+  assert not exists (select 1
+      from public.scoring_place_tiles(array['42.0_-92.5'], 'campground')),
+    'scoring_place_tiles filters by kind';
+end $$;
+reset role;
+set role service_role;
+update public.places set enrich_next_attempt_at = now() + interval '1 day'
+  where source_id = 'node/3';
+do $$ begin
+  assert not exists (select 1
+      from public.scoring_place_tiles(array['42.0_-92.5'], 'attraction')),
+    'a place backed off for long does not keep its tile scoring';
+end $$;
+update public.places set enrich_next_attempt_at = null where source_id = 'node/3';
+update public.place_tiles set status = 'pending', fetched_at = null
+  where tile_key = '42.0_-92.5';
+reset role;
+
 set role anon;
 do $$ begin
   perform public.suggestion_places(array['43.5_-98.5'], 'attraction');
   assert false, 'anon cannot call suggestion_places';
+exception when insufficient_privilege then null;
+end $$;
+do $$ begin
+  perform public.scoring_place_tiles(array['43.5_-98.5'], 'attraction');
+  assert false, 'anon cannot call scoring_place_tiles';
 exception when insufficient_privilege then null;
 end $$;
 reset role;

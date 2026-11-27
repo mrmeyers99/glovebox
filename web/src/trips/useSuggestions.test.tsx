@@ -46,7 +46,13 @@ function place(id: number, tile: string, percentile = 0.5): Suggestion {
 }
 
 const answer = (over: Partial<SuggestionsResult> = {}) =>
-  Promise.resolve({ places: [], pending: [], failed: [], ...over })
+  Promise.resolve({
+    places: [],
+    pending: [],
+    failed: [],
+    scoring: [],
+    ...over,
+  })
 
 /** Runs timers and lets the fetch's promise settle. */
 async function advance(ms: number) {
@@ -146,6 +152,48 @@ describe('useSuggestions', () => {
     expect(fetchSuggestions).toHaveBeenCalledTimes(1)
   })
 
+  it('asks again for tiles still being scored, showing their places meanwhile', async () => {
+    const [first, ...rest] = tiles
+    fetchSuggestions
+      .mockReturnValueOnce(
+        answer({ places: [place(1, first, 0.2)], scoring: [first] }),
+      )
+      .mockReturnValue(
+        answer({ places: [place(1, first, 0.2), place(2, first, 0.9)] }),
+      )
+    const { result } = render(route, true)
+    await advance(SUGGESTIONS_DEBOUNCE_MS)
+    expect(result.current.places.map((p) => p.id)).toEqual([1])
+    expect(result.current.pending).toBe(1)
+
+    await advance(SUGGESTIONS_POLL_MS)
+    // Only the scoring tile: the others are done.
+    expect(fetchSuggestions).toHaveBeenLastCalledWith([first])
+    expect(rest.length).toBeGreaterThan(0)
+    expect(result.current.places.map((p) => p.id)).toEqual([2, 1])
+    expect(result.current.pending).toBe(0)
+    await advance(SUGGESTIONS_POLL_MS * 2)
+    expect(fetchSuggestions).toHaveBeenCalledTimes(2)
+  })
+
+  it('asks again for failed tiles while other tiles are still coming', async () => {
+    const [first, second] = tiles
+    fetchSuggestions
+      .mockReturnValueOnce(answer({ failed: [first], pending: [second] }))
+      .mockReturnValueOnce(answer({ places: [place(1, first)] }))
+      .mockReturnValue(answer())
+    const { result } = render(route, true)
+    await advance(SUGGESTIONS_DEBOUNCE_MS)
+    expect(result.current.failed).toBe(1)
+
+    await advance(SUGGESTIONS_POLL_MS)
+    expect(fetchSuggestions).toHaveBeenLastCalledWith([first, second])
+    expect(result.current.failed).toBe(0)
+    expect(result.current.places).toHaveLength(1)
+    await advance(SUGGESTIONS_POLL_MS * 2)
+    expect(fetchSuggestions).toHaveBeenCalledTimes(2)
+  })
+
   it('turning off clears the places and stops asking', async () => {
     fetchSuggestions.mockReturnValue(
       answer({ places: [place(1, tiles[0])], pending: tiles.slice(1) }),
@@ -165,7 +213,9 @@ describe('useSuggestions', () => {
     const { result, rerender } = render(route, true)
     await advance(SUGGESTIONS_DEBOUNCE_MS)
     rerender({ lines: route, enabled: false })
-    await act(async () => resolve({ places: [], pending: tiles, failed: [] }))
+    await act(async () =>
+      resolve({ places: [], pending: tiles, failed: [], scoring: [] }),
+    )
     await advance(SUGGESTIONS_POLL_MS * 2)
     expect(fetchSuggestions).toHaveBeenCalledTimes(1)
     expect(result.current.pending).toBe(0)

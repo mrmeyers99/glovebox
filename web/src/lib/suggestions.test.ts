@@ -129,11 +129,13 @@ describe('parseSuggestionsResponse', () => {
         places: [raw, { id: 'x' }],
         pending: ['1.0_1.0', 2],
         failed: 'nope',
+        scoring: ['2.0_2.0', null],
       }),
     ).toEqual({
       places: [parseSuggestion(raw)],
       pending: ['1.0_1.0'],
       failed: [],
+      scoring: ['2.0_2.0'],
     })
   })
 
@@ -146,7 +148,7 @@ describe('parseSuggestionsResponse', () => {
 describe('fetchSuggestions', () => {
   it('asks for the tiles and kind', async () => {
     invoke.mockResolvedValue({
-      data: { places: [raw], pending: ['a'], failed: ['b'] },
+      data: { places: [raw], pending: ['a'], failed: ['b'], scoring: ['c'] },
       error: null,
     })
     const result = await fetchSuggestions(['a', 'b', 'c'])
@@ -157,6 +159,7 @@ describe('fetchSuggestions', () => {
       places: [parseSuggestion(raw)],
       pending: ['a'],
       failed: ['b'],
+      scoring: ['c'],
     })
   })
 
@@ -171,7 +174,11 @@ describe('fetchSuggestions', () => {
         error: null,
       })
       .mockResolvedValueOnce({
-        data: { places: [{ ...raw, id: 2, percentile: 0.9 }], failed: ['y'] },
+        data: {
+          places: [{ ...raw, id: 2, percentile: 0.9 }],
+          failed: ['y'],
+          scoring: ['z'],
+        },
         error: null,
       })
     const result = await fetchSuggestions(tiles, 'campground')
@@ -186,6 +193,7 @@ describe('fetchSuggestions', () => {
     expect(result.places.map((p) => p.id)).toEqual([2, 1])
     expect(result.pending).toEqual(['x'])
     expect(result.failed).toEqual(['y'])
+    expect(result.scoring).toEqual(['z'])
   })
 
   it('throws when the function fails', async () => {

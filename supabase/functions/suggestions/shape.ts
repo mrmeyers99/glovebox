@@ -66,6 +66,11 @@ export interface SuggestionsResponse {
   pending: string[]
   /** Tiles the worker couldn't fetch (it retries them with back-off). */
   failed: string[]
+  /**
+   * Done tiles with places still waiting for a score: their scored places are
+   * in `places`, and more may come. Ask again later.
+   */
+  scoring: string[]
 }
 
 /** Tiles whose places are needed to rank `tiles`: each one and its neighbours. */
@@ -83,11 +88,13 @@ export function rankingTiles(tiles: Iterable<string>): string[] {
  * @param statuses each tile's status; a tile missing here was just queued
  * @param rows scored places in 'done' tiles: the requested tiles and their
  *   neighbours, which are only used for ranking
+ * @param scoringTiles done tiles that still have unscored places
  */
 export function shapeSuggestions(
   tiles: readonly string[],
   statuses: ReadonlyMap<string, TileStatus>,
   rows: readonly PlaceRow[],
+  scoringTiles: ReadonlySet<string> = new Set(),
 ): SuggestionsResponse {
   const pending: string[] = []
   const failed: string[] = []
@@ -126,7 +133,8 @@ export function shapeSuggestions(
     .sort(
       (a, b) => b.percentile - a.percentile || b.score - a.score || a.id - b.id,
     )
-  return { places, pending, failed }
+  const scoring = [...done].filter((tile) => scoringTiles.has(tile))
+  return { places, pending, failed, scoring }
 }
 
 function toSuggestion(row: PlaceRow, percentile: number): Suggestion {

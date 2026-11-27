@@ -157,7 +157,7 @@ const options = {
 }
 
 Deno.test(
-  'fetchOverpass posts the query with a contact User-Agent',
+  'fetchOverpass sends the query in a GET with a contact User-Agent',
   async () => {
     const { calls, fetchFn } = fakeFetch({
       'overpass-api.de': () => answer(fixture),
@@ -168,13 +168,14 @@ Deno.test(
     })
     assertEquals(result.length, elements.length)
     assertEquals(calls.length, 1)
-    assertEquals(calls[0].url, OVERPASS_SERVERS[0])
+    const url = new URL(calls[0].url)
+    assertEquals(url.origin + url.pathname, OVERPASS_SERVERS[0])
+    assertEquals(url.searchParams.get('data'), '[out:json];node(1);out;')
+    assertEquals(calls[0].init?.method, undefined)
+    assertEquals(calls[0].init?.body, undefined)
     const headers = new Headers(calls[0].init?.headers)
     assertEquals(headers.get('user-agent'), options.userAgent)
-    assertEquals(
-      (calls[0].init?.body as URLSearchParams).get('data'),
-      '[out:json];node(1);out;',
-    )
+    assertEquals(headers.get('accept'), 'application/json')
   },
 )
 
@@ -245,3 +246,30 @@ Deno.test('fetchOverpass reports non-Error failures', async () => {
   )
   assertStringIncludes(String(error), 'a.example: boom')
 })
+
+Deno.test(
+  'fetchOverpass gives each server a share of the time left',
+  async () => {
+    const timeouts: number[] = []
+    const realTimeout = AbortSignal.timeout
+    AbortSignal.timeout = (ms: number) => {
+      timeouts.push(ms)
+      return realTimeout.call(AbortSignal, ms)
+    }
+    try {
+      const fetchFn = (() =>
+        Promise.reject(new TypeError('refused'))) as typeof fetch
+      await assertRejects(() =>
+        fetchOverpass('q', {
+          ...options,
+          fetchFn,
+          deadline: 90_000,
+          now: () => 0,
+        }),
+      )
+    } finally {
+      AbortSignal.timeout = realTimeout
+    }
+    assertEquals(timeouts, [30_000, 45_000, 90_000])
+  },
+)
