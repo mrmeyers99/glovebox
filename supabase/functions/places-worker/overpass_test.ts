@@ -38,8 +38,25 @@ Deno.test(
     )
     assertStringIncludes(
       query,
-      'nwr["tourism"~"^(attraction|museum|viewpoint|zoo|theme_park|gallery|aquarium|camp_site|caravan_site)$"]["name"];',
+      'nwr["tourism"~"^(attraction|museum|viewpoint|zoo|theme_park|gallery|aquarium)$"]["name"];',
     )
+    // Campgrounds, named or not.
+    assertStringIncludes(
+      query,
+      'nwr["tourism"~"^(camp_site|caravan_site)$"]->.camps;',
+    )
+    assertStringIncludes(query, '  .camps;\n)->.found;')
+    // The parks each campground is in or near, with their outlines.
+    assertStringIncludes(query, '.campNodes is_in->.campAreas;')
+    assertStringIncludes(
+      query,
+      'relation(pivot.campAreas)["leisure"~"^(nature_reserve|park)$"];',
+    )
+    assertStringIncludes(
+      query,
+      'way(around.camps:1000)["boundary"~"^(national_park|protected_area)$"];',
+    )
+    assertStringIncludes(query, '.parks out body geom qt;')
     assertStringIncludes(
       query,
       'nwr["boundary"="national_park"]["wikidata"]["name"];',
@@ -47,7 +64,7 @@ Deno.test(
     assertStringIncludes(query, 'node.found;\nout body qt;')
     assertStringIncludes(
       query,
-      '(way.found; relation.found;);\nout tags bb qt;',
+      '(way.found; relation.found;)->.areas;\n(.areas; - .parks;);\nout tags bb qt;',
     )
   },
 )
@@ -90,6 +107,10 @@ Deno.test('parseElements keeps named candidates with a position', () => {
       'node/101',
       'node/104',
       'node/105',
+      // Unnamed campgrounds are kept (finishCampgrounds names them).
+      'node/106',
+      'node/107',
+      'node/108',
       'way/201',
       'way/202',
       'way/203',
@@ -120,6 +141,40 @@ Deno.test('parseElements keeps named candidates with a position', () => {
   // A malformed Wikidata tag is dropped (places.wikidata must be a QID).
   assertEquals(places.find((p) => p.id === 'node/105')!.wikidata, null)
 })
+
+Deno.test(
+  'parseElements places an outline without bounds by its points',
+  () => {
+    const [park] = parseElements([
+      {
+        type: 'relation',
+        id: 9,
+        tags: { name: 'P', leisure: 'park', wikidata: 'Q9' },
+        members: [
+          {
+            type: 'way',
+            ref: 1,
+            role: 'outer',
+            geometry: [{ lat: 1, lon: 2 }, null, { lat: 3, lon: 6 }],
+          },
+          { type: 'node', ref: 2, role: '' },
+        ],
+      },
+    ])
+    assertEquals([park.lat, park.lng], [2, 4])
+    assertEquals(
+      parseElements([
+        {
+          type: 'way',
+          id: 1,
+          tags: { name: 'A', tourism: 'museum' },
+          geometry: [],
+        },
+      ]),
+      [],
+    )
+  },
+)
 
 Deno.test('parseElements drops nodes without coordinates', () => {
   assertEquals(

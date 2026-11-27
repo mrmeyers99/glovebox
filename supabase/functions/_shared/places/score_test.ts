@@ -1,5 +1,10 @@
 import { assertAlmostEquals, assertEquals } from '@std/assert'
-import { CATEGORY_BONUS, scorePlace } from './score.ts'
+import {
+  AMENITY_BONUS,
+  CATEGORY_BONUS,
+  campgroundScore,
+  scorePlace,
+} from './score.ts'
 
 Deno.test('scorePlace follows the prototype formula', () => {
   const score = scorePlace(
@@ -39,4 +44,16 @@ Deno.test('every category bonus is a small non-negative number', () => {
   for (const bonus of Object.values(CATEGORY_BONUS)) {
     assertEquals(bonus >= 0 && bonus <= 1, true)
   }
+})
+
+Deno.test('a campground inherits its park score plus an amenity bonus', () => {
+  assertAlmostEquals(campgroundScore(0, 2.5, 1), 2.5 + AMENITY_BONUS)
+  assertAlmostEquals(campgroundScore(0.1, 2, 0.5), 2.1 + AMENITY_BONUS / 2)
+  // No park (or one not scored yet): its own score and the bonus only.
+  assertAlmostEquals(campgroundScore(0, null, 0), 0)
+  assertAlmostEquals(campgroundScore(0, undefined, 1), AMENITY_BONUS)
+  assertAlmostEquals(campgroundScore(0, Number.NaN, 0), 0)
+  // Completeness is clamped to 0..1.
+  assertAlmostEquals(campgroundScore(0, 1, 3), 1 + AMENITY_BONUS)
+  assertAlmostEquals(campgroundScore(0, 1, -1), 1)
 })

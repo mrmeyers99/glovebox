@@ -75,3 +75,24 @@ export function scorePlace(signals: PlaceSignals, category: string): number {
 function logCount(n: number | null | undefined): number {
   return n != null && Number.isFinite(n) && n > 0 ? Math.log10(1 + n) : 0
 }
+
+/** Added to a campground's score for complete amenity data (all fields known). */
+export const AMENITY_BONUS = 0.3
+
+/**
+ * A campground's score. People choose campgrounds by place and amenities, not
+ * fame, so it inherits the score of the park it is in (or next to), adds its
+ * own (usually just its category bonus: few campgrounds have a Wikidata
+ * item), and gets up to AMENITY_BONUS for how complete its amenity data is
+ * (amenityCompleteness, 0 to 1).
+ */
+export function campgroundScore(
+  ownScore: number,
+  parentScore: number | null | undefined,
+  completeness: number,
+): number {
+  const parent =
+    parentScore != null && Number.isFinite(parentScore) ? parentScore : 0
+  const share = Math.min(1, Math.max(0, completeness))
+  return ownScore + parent + AMENITY_BONUS * share
+}

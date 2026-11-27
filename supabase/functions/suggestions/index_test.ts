@@ -24,6 +24,7 @@ const corn: PlaceRow = {
   image_license: null,
   score: 5.1,
   parent_place_id: null,
+  parent_score: null,
 }
 
 /**

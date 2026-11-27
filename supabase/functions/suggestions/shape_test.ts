@@ -1,8 +1,14 @@
-import { assertEquals } from '@std/assert'
+import { assertAlmostEquals, assertEquals } from '@std/assert'
+import {
+  AMENITY_BONUS,
+  type CampgroundAmenities,
+  parseAmenities,
+} from '../_shared/places/mod.ts'
 import {
   amenities,
   osmUrl,
   placeImage,
+  placeScore,
   rankingTiles,
   shapeSuggestions,
   wikipediaUrl,
@@ -33,6 +39,7 @@ function row(fields: Partial<PlaceRow> = {}): PlaceRow {
     image_license: null,
     score: 1,
     parent_place_id: null,
+    parent_score: null,
     ...fields,
   }
 }
@@ -245,13 +252,18 @@ Deno.test('amenities reads campground tags', () => {
       tents: true,
       rvs: false,
       hookups: true,
+      drinking_water: false,
+      dump_station: null,
       showers: true,
       toilets: true,
-      drinking_water: false,
       fee: true,
+      fee_amount: '25 USD',
       reservation: 'required',
       capacity: 42,
       website: 'https://example.com/camp',
+      phone: null,
+      operator: null,
+      ownership: null,
     },
   )
   const unknown = amenities('tourism=caravan_site', {
@@ -260,17 +272,88 @@ Deno.test('amenities reads campground tags', () => {
     reservation: ' ',
   })
   assertEquals(unknown, {
-    tents: null,
+    ...parseAmenities('tourism=camp_site', {}),
     rvs: true, // a caravan site takes RVs unless tagged otherwise
-    hookups: null,
-    showers: null,
-    toilets: null,
-    drinking_water: null,
-    fee: null,
-    reservation: null,
-    capacity: null,
-    website: null,
   })
   assertEquals(amenities('tourism=camp_site', { motorhome: 'yes' }).rvs, true)
   assertEquals(amenities('tourism=camp_site', {}).rvs, null)
+})
+
+Deno.test('amenities prefers what the fill worker stored', () => {
+  const stored: CampgroundAmenities = {
+    ...parseAmenities('tourism=camp_site', {}),
+    tents: true,
+    ownership: 'public',
+  }
+  // The raw tags disagree: the stored object wins.
+  assertEquals(
+    amenities('tourism=camp_site', { tents: 'no', amenities: stored }),
+    stored,
+  )
+  // Fields missing from an older stored object are unknown.
+  assertEquals(
+    amenities('tourism=camp_site', { amenities: { showers: true } }),
+    { ...parseAmenities('tourism=camp_site', {}), showers: true },
+  )
+  // Not an object: read the raw tags, ignoring values that aren't text.
+  assertEquals(
+    amenities('tourism=camp_site', { amenities: 'x', shower: 'yes', fee: 5 }),
+    { ...parseAmenities('tourism=camp_site', {}), showers: true },
+  )
+})
+
+Deno.test('placeScore: a campground builds on its park', () => {
+  assertEquals(placeScore(row({ score: 2, parent_score: 9 })), 2)
+  const camp = (fields: Partial<PlaceRow>) =>
+    row({
+      kind: 'campground',
+      category: 'tourism=camp_site',
+      score: 0,
+      ...fields,
+    })
+  assertEquals(placeScore(camp({ parent_score: 3.5 })), 3.5)
+  assertEquals(placeScore(camp({ parent_score: null })), 0)
+  const amenities = parseAmenities('tourism=camp_site', {
+    tents: 'yes',
+    caravans: 'yes',
+    power_supply: 'yes',
+    drinking_water: 'yes',
+    sanitary_dump_station: 'no',
+    shower: 'yes',
+    toilets: 'yes',
+    fee: 'yes',
+    reservation: 'no',
+    capacity: '10',
+    website: 'https://example.com',
+  })
+  assertAlmostEquals(
+    placeScore(camp({ parent_score: 2, tags: { amenities } })),
+    2 + AMENITY_BONUS,
+  )
+})
+
+Deno.test('campgrounds are ranked by their park', () => {
+  const tiles = statuses({ [A]: 'done' })
+  const inPark = row({
+    kind: 'campground',
+    category: 'tourism=camp_site',
+    score: 0,
+    parent_place_id: 99,
+    parent_score: 4,
+  })
+  const alone = row({
+    kind: 'campground',
+    category: 'tourism=camp_site',
+    score: 0,
+  })
+  const { places } = shapeSuggestions([A], tiles, [alone, inPark])
+  assertEquals(
+    places.map((p) => [p.id, p.score]),
+    [
+      [inPark.id, 4],
+      [alone.id, 0],
+    ],
+  )
+  // The park itself isn't among the campground rows, so nothing hides them.
+  assertEquals(places.length, 2)
 })
