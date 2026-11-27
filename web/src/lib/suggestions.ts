@@ -18,6 +18,34 @@ export interface SuggestionImage {
   license: string | null
 }
 
+/**
+ * What a campground offers, from its OpenStreetMap tags. null always means
+ * "not known": most campgrounds leave most of these untagged.
+ */
+export interface CampgroundAmenities {
+  tents: boolean | null
+  /** Caravans or motorhomes allowed. */
+  rvs: boolean | null
+  /** Electric hookups. */
+  hookups: boolean | null
+  drinking_water: boolean | null
+  dump_station: boolean | null
+  showers: boolean | null
+  toilets: boolean | null
+  fee: boolean | null
+  /** The price as written in OSM, e.g. '$25'. */
+  fee_amount: string | null
+  /** OSM reservation=*: 'required', 'recommended', 'yes', 'no'... */
+  reservation: string | null
+  /** Number of pitches. */
+  capacity: number | null
+  /** http(s) only. */
+  website: string | null
+  phone: string | null
+  operator: string | null
+  ownership: 'public' | 'private' | null
+}
+
 export interface Suggestion {
   id: number
   name: string
@@ -33,6 +61,10 @@ export interface Suggestion {
   image: SuggestionImage | null
   wikipedia_url: string | null
   osm_url: string | null
+  /** Campgrounds only. */
+  amenities?: CampgroundAmenities | null
+  /** The place it is part of, such as a campground's park. */
+  parent_name?: string | null
 }
 
 export interface SuggestionsResult {
@@ -72,6 +104,50 @@ function parseImage(value: unknown): SuggestionImage | null {
   }
 }
 
+const optionalBoolean = (value: unknown) =>
+  typeof value === 'boolean' ? value : null
+
+/** A link the app can open: http(s) only. */
+const webUrl = (value: unknown) => {
+  const url = optionalString(value)
+  return url && /^https?:\/\/\S+$/i.test(url) ? url : null
+}
+
+const BOOLEAN_AMENITIES = [
+  'tents',
+  'rvs',
+  'hookups',
+  'drinking_water',
+  'dump_station',
+  'showers',
+  'toilets',
+  'fee',
+] as const
+
+export function parseAmenities(value: unknown): CampgroundAmenities | null {
+  if (!isRecord(value)) return null
+  const flags = Object.fromEntries(
+    BOOLEAN_AMENITIES.map((key) => [key, optionalBoolean(value[key])]),
+  ) as Record<(typeof BOOLEAN_AMENITIES)[number], boolean | null>
+  const capacity = value.capacity
+  return {
+    ...flags,
+    fee_amount: optionalString(value.fee_amount),
+    reservation: optionalString(value.reservation),
+    capacity:
+      typeof capacity === 'number' && Number.isInteger(capacity) && capacity > 0
+        ? capacity
+        : null,
+    website: webUrl(value.website),
+    phone: optionalString(value.phone),
+    operator: optionalString(value.operator),
+    ownership:
+      value.ownership === 'public' || value.ownership === 'private'
+        ? value.ownership
+        : null,
+  }
+}
+
 /** One place from the response, or null if it isn't usable. */
 export function parseSuggestion(value: unknown): Suggestion | null {
   if (!isRecord(value)) return null
@@ -99,6 +175,8 @@ export function parseSuggestion(value: unknown): Suggestion | null {
     image: parseImage(value.image),
     wikipedia_url: optionalString(value.wikipedia_url),
     osm_url: optionalString(value.osm_url),
+    amenities: kind === 'campground' ? parseAmenities(value.amenities) : null,
+    parent_name: optionalString(value.parent_name),
   }
 }
 

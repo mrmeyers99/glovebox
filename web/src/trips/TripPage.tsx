@@ -1,8 +1,11 @@
 import { useCallback, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { overnightDayOf } from '../lib/campgrounds'
 import type { Stop, Trip } from '../lib/database.types'
 import type { LatLng } from '../lib/geocode'
 import type { Suggestion } from '../lib/suggestions'
+import type { CampgroundLayer } from './CampgroundMarkers'
+import { CampgroundPanel } from './CampgroundPanel'
 import { DeleteDayDialog, DayNotesDialog } from './DayDialogs'
 import { DayListPanel } from './DayListPanel'
 import { DayMenu } from './DayMenu'
@@ -17,13 +20,14 @@ import {
   type StopDialogMode,
   type SuggestedStop,
 } from './StopDialog'
-import { suggestedPlacement } from './suggestionStop'
+import { placesInTrip, suggestedPlacement } from './suggestionStop'
 import { TripEndDialog } from './TripEndDialog'
 import type { TripEndKind } from './tripEnds'
 import { TripSettingsDialog } from './TripSettingsDialog'
 import { dropPlacement } from './moveStops'
 import { StopMenu } from './StopMenu'
 import type { MenuAnchor } from './stopMenu'
+import { useCampgroundSearch } from './useCampgroundSearch'
 import { useMoveStop } from './useMoveStop'
 import { usePresence } from './usePresence'
 import { useTrip } from './useTrip'
@@ -138,6 +142,59 @@ export function TripPage() {
     },
     [days, summary.legs],
   )
+  // Campgrounds near the end of a day, listed in the day list's place.
+  const campgrounds = useCampgroundSearch(summary.days, stops)
+  const { search: campgroundSearch } = campgrounds
+  const inTrip = useMemo(() => placesInTrip(stops), [stops])
+  // A campground goes at the end of the day, as its last stop.
+  const addCampground = useCallback(
+    (place: Suggestion) => {
+      if (!campgroundSearch) return
+      setStopDialog({
+        type: 'add',
+        dayId: campgroundSearch.dayId,
+        dayNumber: campgroundSearch.dayNumber,
+        at: { lat: place.lat, lng: place.lng },
+        suggestion: { placeId: place.id, name: place.name, beforeStopId: null },
+      })
+    },
+    [campgroundSearch],
+  )
+  const canAddCampground = canEdit && campgroundSearch !== null
+  const campgroundLayer = useMemo(
+    (): CampgroundLayer | null =>
+      campgroundSearch && {
+        center: [
+          Number(campgroundSearch.stop.lat),
+          Number(campgroundSearch.stop.lng),
+        ],
+        dayNumber: campgroundSearch.dayNumber,
+        places: campgrounds.shown.map((c) => c.place),
+        onAdd: canAddCampground ? addCampground : undefined,
+      },
+    [campgroundSearch, campgrounds.shown, canAddCampground, addCampground],
+  )
+  const openCampgrounds = campgrounds.open
+  // The selected stop ends its day: offer campgrounds near it on the map.
+  const selectedOvernightDay = selection
+    ? overnightDayOf(summary.days, selection.stopId)
+    : null
+  const selectedStopName = selection
+    ? stops.find((s) => s.id === selection.stopId)?.name
+    : undefined
+  const findCampgrounds =
+    selectedOvernightDay &&
+    selectedStopName !== undefined &&
+    campgroundSearch?.dayId !== selectedOvernightDay
+      ? {
+          stopName: selectedStopName,
+          onFind: () => {
+            openCampgrounds(selectedOvernightDay)
+            // At phone width the list shows in the list tab.
+            setView('list')
+          },
+        }
+      : null
   // Resolved on every render so the dialog follows live changes; it closes
   // if the stop is deleted meanwhile.
   const stopDialogMode = useMemo((): StopDialogMode | null => {
@@ -253,23 +310,41 @@ export function TripPage() {
             </button>
           </p>
         )}
-        <DayListPanel
-          trip={trip}
-          days={days}
-          stops={stops}
-          summary={summary}
-          gasPriceKnown={gasPriceKnown}
-          selection={selection}
-          onSelectStop={selectFromList}
-          onAddStop={canEdit ? openAddStop : undefined}
-          onMoveStop={canEdit ? stopUpdates.move : undefined}
-          onSetTripEnd={canEdit ? openTripEnd : undefined}
-          menuStopId={menuStop?.id ?? null}
-          onOpenStopMenu={openStopMenu}
-          menuDayId={menuDay?.id ?? null}
-          onOpenDayMenu={canEdit ? openDayMenu : undefined}
-          presence={presence.index}
-        />
+        {campgroundSearch ? (
+          <CampgroundPanel
+            key={campgroundSearch.dayId}
+            dayNumber={campgroundSearch.dayNumber}
+            stopName={campgroundSearch.stop.name}
+            currentPlaceId={campgroundSearch.currentPlaceId}
+            state={campgrounds.state}
+            shown={campgrounds.shown}
+            filter={campgrounds.filter}
+            onFilterChange={campgrounds.setFilter}
+            inTrip={inTrip}
+            onAdd={canAddCampground ? addCampground : undefined}
+            onClose={campgrounds.close}
+          />
+        ) : (
+          <DayListPanel
+            trip={trip}
+            days={days}
+            stops={stops}
+            summary={summary}
+            gasPriceKnown={gasPriceKnown}
+            selection={selection}
+            onSelectStop={selectFromList}
+            onAddStop={canEdit ? openAddStop : undefined}
+            onMoveStop={canEdit ? stopUpdates.move : undefined}
+            onSetTripEnd={canEdit ? openTripEnd : undefined}
+            menuStopId={menuStop?.id ?? null}
+            onOpenStopMenu={openStopMenu}
+            menuDayId={menuDay?.id ?? null}
+            onOpenDayMenu={canEdit ? openDayMenu : undefined}
+            presence={presence.index}
+            onFindCampgrounds={campgrounds.open}
+            campgroundPlaceIds={campgrounds.campgroundPlaceIds}
+          />
+        )}
       </section>
       <section
         id="trip-panel-map"
@@ -286,6 +361,8 @@ export function TripPage() {
           onAddSuggestion={
             canEdit && days.length > 0 ? addSuggestion : undefined
           }
+          campgrounds={campgroundLayer}
+          findCampgrounds={findCampgrounds}
         />
       </section>
 

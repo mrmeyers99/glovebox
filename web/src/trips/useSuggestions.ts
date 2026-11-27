@@ -6,6 +6,8 @@
 // with those; tiles our own request failed for, only when the toggle is
 // turned off and on. Tiles already answered aren't asked for again,
 // so editing the route only fetches the tiles it newly passes through.
+// useTileSuggestions does the same for any set of tiles and kind of place,
+// such as the campgrounds near a day's last stop.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { corridorTiles, type LatLng } from '../lib/corridor'
@@ -13,6 +15,7 @@ import {
   bestFirst,
   fetchSuggestions,
   type Suggestion,
+  type SuggestionKind,
 } from '../lib/suggestions'
 
 /** How often to ask again for tiles that are still being filled. */
@@ -45,15 +48,30 @@ const OFF: SuggestionsState = {
   error: false,
 }
 
+/** Tiles as one string that changes only when the set of tiles does. */
+export function tilesKeyOf(tiles: Iterable<string>) {
+  return [...tiles].sort().join(' ')
+}
+
 export function useSuggestions(
   lines: LatLng[][],
   enabled: boolean,
 ): SuggestionsState {
   // Changes only when the set of tiles does, not on every route update.
-  const tilesKey = useMemo(
-    () => [...corridorTiles(lines)].sort().join(' '),
-    [lines],
-  )
+  const tilesKey = useMemo(() => tilesKeyOf(corridorTiles(lines)), [lines])
+  return useTileSuggestions(tilesKey, 'attraction', enabled)
+}
+
+/**
+ * Places of `kind` in the tiles of `tilesKey` (from tilesKeyOf), while
+ * `enabled`, asking again for tiles still being filled or scored. Answers
+ * are kept per tile, so a hook asks for one `kind` only.
+ */
+export function useTileSuggestions(
+  tilesKey: string,
+  kind: SuggestionKind,
+  enabled: boolean,
+): SuggestionsState {
   const [tiles, setTiles] = useState<ReadonlyMap<string, TileState>>(
     () => new Map(),
   )
@@ -94,7 +112,7 @@ export function useSuggestions(
       })
       if (toAsk.length === 0) return
       timer = setTimeout(() => {
-        fetchSuggestions(toAsk).then(
+        fetchSuggestions(toAsk, kind).then(
           (result) => {
             if (cancelled) return
             const pending = new Set(result.pending)
@@ -132,7 +150,7 @@ export function useSuggestions(
       cancelled = true
       clearTimeout(timer)
     }
-  }, [enabled, tilesKey])
+  }, [enabled, tilesKey, kind])
 
   return useMemo(() => {
     if (!enabled || tilesKey === '') return OFF

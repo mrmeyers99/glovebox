@@ -1,9 +1,11 @@
-import { distanceFromRoute, type LatLng } from '../lib/corridor'
+import { campgroundDistanceLabel } from '../lib/campgrounds'
+import { distanceFromRoute, haversineKm, type LatLng } from '../lib/corridor'
 import {
   categoryInfo,
   routeDistanceLabel,
   type Suggestion,
 } from '../lib/suggestions'
+import { CampgroundDetails } from './CampgroundDetails'
 
 /** What a suggested place is, shown when its marker is clicked. */
 export function SuggestionCard({
@@ -11,6 +13,8 @@ export function SuggestionCard({
   lines,
   inTrip,
   onAdd,
+  from,
+  addLabel = 'Add to trip',
 }: {
   place: Suggestion
   /** Route lines, for the distance from the route. */
@@ -19,11 +23,14 @@ export function SuggestionCard({
   inTrip: boolean
   /** Owners and editors: add the place to the trip as a stop. */
   onAdd?: (place: Suggestion) => void
+  /** Give the distance from this point (a stop) instead of from the route. */
+  from?: LatLng
+  addLabel?: string
 }) {
   const { label, icon } = categoryInfo(place.category)
-  const distance = routeDistanceLabel(
-    distanceFromRoute([place.lat, place.lng], lines),
-  )
+  const distance = from
+    ? campgroundDistanceLabel(haversineKm(from, [place.lat, place.lng]))
+    : routeDistanceLabel(distanceFromRoute([place.lat, place.lng], lines))
   const { image } = place
   return (
     <article className="suggestion-card" aria-label={place.name}>
@@ -45,6 +52,7 @@ export function SuggestionCard({
         <span aria-hidden="true">{icon}</span> {label}
         {distance && <> · {distance}</>}
       </p>
+      {place.kind === 'campground' && <CampgroundDetails place={place} />}
       {(place.wikipedia_url || place.osm_url) && (
         <p className="suggestion-links">
           {place.wikipedia_url && (
@@ -64,7 +72,7 @@ export function SuggestionCard({
       ) : (
         onAdd && (
           <button type="button" onClick={() => onAdd(place)}>
-            Add to trip
+            {addLabel}
           </button>
         )
       )}

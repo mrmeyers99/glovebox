@@ -49,6 +49,9 @@ export function SuggestionMarkers({
   lines,
   inTrip,
   onAdd,
+  highlight = false,
+  from,
+  addLabel,
 }: {
   /** Best first, from useSuggestions. */
   places: readonly Suggestion[]
@@ -57,11 +60,20 @@ export function SuggestionMarkers({
   inTrip: ReadonlySet<number>
   /** Owners and editors: add a place to the trip as a stop. */
   onAdd?: (place: Suggestion) => void
+  /**
+   * Results of a search, such as campgrounds near a stop: all drawn (not
+   * thinned out by zoom), and highlighted.
+   */
+  highlight?: boolean
+  /** Cards give the distance from this point instead of from the route. */
+  from?: LatLng
+  /** The card's add button. */
+  addLabel?: string
 }) {
   const { zoom, bounds } = useMapView()
   const visible = useMemo(
-    () => visibleSuggestions(places, zoom, bounds),
-    [places, zoom, bounds],
+    () => (highlight ? places : visibleSuggestions(places, zoom, bounds)),
+    [places, zoom, bounds, highlight],
   )
   const [openId, setOpenId] = useState<number | null>(null)
   // The open card stays even if its marker is thinned out by zooming.
@@ -75,6 +87,7 @@ export function SuggestionMarkers({
           place={place}
           selected={place.id === openId}
           inTrip={inTrip.has(place.id)}
+          highlight={highlight}
           onSelect={setOpenId}
         />
       ))}
@@ -91,6 +104,8 @@ export function SuggestionMarkers({
           <SuggestionCard
             place={open}
             lines={lines}
+            from={from}
+            addLabel={addLabel}
             inTrip={inTrip.has(open.id)}
             onAdd={
               onAdd &&
@@ -110,11 +125,13 @@ const SuggestionPin = memo(function SuggestionPin({
   place,
   selected,
   inTrip,
+  highlight,
   onSelect,
 }: {
   place: Suggestion
   selected: boolean
   inTrip: boolean
+  highlight: boolean
   onSelect: (id: number) => void
 }) {
   const { label, icon } = categoryInfo(place.category)
@@ -137,6 +154,7 @@ const SuggestionPin = memo(function SuggestionPin({
         className="suggestion-marker"
         data-tier={tier}
         data-in-trip={inTrip || undefined}
+        data-highlight={highlight || undefined}
         aria-pressed={selected}
         aria-label={`${place.name} (${inTrip ? `${label}, in your trip` : label})`}
         title={place.name}

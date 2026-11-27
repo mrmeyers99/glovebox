@@ -91,6 +91,37 @@ const renderPanel = () =>
     />,
   )
 
+describe('MapPanel campgrounds', () => {
+  it("offers campgrounds near a day's last stop, and highlights a search", async () => {
+    const onFind = vi.fn()
+    const layer = { center: [44, -103], dayNumber: 1, places: [] }
+    render(
+      <MapPanel
+        days={[]}
+        stops={[]}
+        summary={summary}
+        selection={null}
+        onSelectStop={() => {}}
+        campgrounds={layer as never}
+        findCampgrounds={{ stopName: 'Custer', onFind }}
+      />,
+    )
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Campgrounds near Custer' }),
+    )
+    expect(onFind).toHaveBeenCalled()
+    expect(mocks.mapProps.at(-1)?.campgrounds).toBe(layer)
+  })
+
+  it('offers nothing without a last stop selected', async () => {
+    renderPanel()
+    await screen.findByTestId('trip-map')
+    expect(
+      screen.queryByRole('button', { name: /Campgrounds near/ }),
+    ).toBeNull()
+  })
+})
+
 describe('MapPanel suggestions', () => {
   it('turns suggestions on and off with the toggle', async () => {
     renderPanel()

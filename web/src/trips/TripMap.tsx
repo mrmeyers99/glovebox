@@ -42,6 +42,7 @@ import {
   type StopMarker,
   type StopSelection,
 } from './mapView'
+import { CampgroundMarkers, type CampgroundLayer } from './CampgroundMarkers'
 import { mapPoint } from './mapAdd'
 import { SuggestionMarkers } from './SuggestionMarkers'
 import { placesInTrip } from './suggestionStop'
@@ -63,6 +64,7 @@ export default function TripMap({
   suggestions,
   corridor,
   onAddSuggestion,
+  campgrounds,
 }: {
   days: readonly Day[]
   stops: readonly Stop[]
@@ -78,6 +80,8 @@ export default function TripMap({
   onAddStopAt?: (point: LatLng) => void
   /** Owners and editors: "Add to trip" on a suggestion's card. */
   onAddSuggestion?: (place: Suggestion) => void
+  /** An open campground search, highlighted. */
+  campgrounds?: CampgroundLayer | null
 }) {
   const mapRef = useRef<MapRef>(null)
   const markers = useMemo(
@@ -184,6 +188,7 @@ export default function TripMap({
         inTrip={inTrip}
         onAdd={onAddSuggestion}
       />
+      {campgrounds && <CampgroundMarkers layer={campgrounds} inTrip={inTrip} />}
       {markers.map((marker) => (
         <StopMarkerPin
           key={marker.stopId}

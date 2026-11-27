@@ -73,7 +73,67 @@ describe('parseSuggestion', () => {
       image: raw.image,
       wikipedia_url: raw.wikipedia_url,
       osm_url: raw.osm_url,
+      amenities: null,
+      parent_name: null,
     })
+  })
+
+  it("reads a campground's amenities and park", () => {
+    const camp = parseSuggestion({
+      ...raw,
+      kind: 'campground',
+      parent_name: 'Custer State Park',
+      amenities: {
+        tents: true,
+        rvs: false,
+        hookups: 'yes',
+        showers: null,
+        fee: true,
+        fee_amount: '$25',
+        reservation: 'required',
+        capacity: 40,
+        website: 'https://camp.example',
+        phone: '555',
+        operator: 'SD GFP',
+        ownership: 'public',
+      },
+    })
+    expect(camp?.parent_name).toBe('Custer State Park')
+    expect(camp?.amenities).toEqual({
+      tents: true,
+      rvs: false,
+      hookups: null,
+      drinking_water: null,
+      dump_station: null,
+      showers: null,
+      toilets: null,
+      fee: true,
+      fee_amount: '$25',
+      reservation: 'required',
+      capacity: 40,
+      website: 'https://camp.example',
+      phone: '555',
+      operator: 'SD GFP',
+      ownership: 'public',
+    })
+    const odd = parseSuggestion({
+      ...raw,
+      kind: 'campground',
+      amenities: {
+        capacity: 2.5,
+        website: 'javascript:alert(1)',
+        ownership: 'state',
+      },
+    })?.amenities
+    expect(odd).toMatchObject({
+      capacity: null,
+      website: null,
+      ownership: null,
+    })
+    expect(
+      parseSuggestion({ ...raw, kind: 'campground', amenities: 'x' })
+        ?.amenities,
+    ).toBe(null)
   })
 
   it('fills in missing optional fields', () => {
