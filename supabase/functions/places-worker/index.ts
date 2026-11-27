@@ -2,7 +2,8 @@
 // candidate places from OpenStreetMap (Overpass) into the places table.
 //
 //   POST (no body needed), service role only: `apikey: <secret key>`
-//   → { tiles: [{ tile_key, status: 'done', places } | { tile_key, status: 'failed', error }] }
+//   → { tiles: [{ tile_key, status: 'done', places } | { tile_key, status: 'failed', error }],
+//       paused_until?: ISO time }
 //
 // Not for users: pg_cron calls it every minute (public.invoke_places_worker,
 // in the places_worker migration) while tiles are due. Overpass is slow and
@@ -13,7 +14,10 @@
 // Function time limit. For each tile it queries Overpass, keeps the elements
 // classifyCandidate() accepts, merges duplicates and nests places (dedupe),
 // and stores the places located in the tile. A failed tile is retried later
-// with a growing back-off (retryDelayMs).
+// with a growing back-off (retryDelayMs). When no Overpass server answers a
+// tile (the public servers are often overloaded), the run stops and pauses
+// the worker for PAUSE_MS (worker_pauses; pg_cron skips it meanwhile), rather
+// than failing one tile after another.
 import { requireServiceRole } from '../_shared/auth.ts'
 import { handle, HttpError, json } from '../_shared/http.ts'
 import { contactUserAgent } from '../_shared/user_agent.ts'
@@ -23,6 +27,7 @@ import {
   buildQuery,
   fetchOverpass,
   OVERPASS_SERVERS,
+  OverpassUnavailableError,
   parseElements,
 } from './overpass.ts'
 import { type StoredPlace, supabaseTileStore, type TileStore } from './store.ts'
@@ -34,9 +39,18 @@ export const START_BEFORE_MS = 60_000
 /** Overpass requests stop this long into a run (the platform limit is 150 s). */
 export const RUN_BUDGET_MS = 130_000
 
+/** How long the worker pauses when no Overpass server answers. */
+export const PAUSE_MS = 5 * 60_000
+
 export type TileResult =
   | { tile_key: string; status: 'done'; places: number }
-  | { tile_key: string; status: 'failed'; error: string }
+  | {
+      tile_key: string
+      status: 'failed'
+      error: string
+      /** No Overpass server answered (rather than, say, storing failed). */
+      overpass_unavailable?: true
+    }
 
 export interface Deps {
   fetchFn?: typeof fetch
@@ -67,16 +81,27 @@ export function createHandler({
     ) {
       const [tile] = await store.claim(1)
       if (!tile) break
-      tiles.push(
-        await fillTile(tile.tile_key, tile.attempts, {
-          store,
-          fetchFn,
-          servers,
-          userAgent,
-          deadline,
-          now,
-        }),
-      )
+      const result = await fillTile(tile.tile_key, tile.attempts, {
+        store,
+        fetchFn,
+        servers,
+        userAgent,
+        deadline,
+        now,
+      })
+      tiles.push(result)
+      if (result.status === 'failed' && result.overpass_unavailable) {
+        const until = new Date(now() + PAUSE_MS)
+        try {
+          await store.pause(until, result.error)
+          console.log(`places-worker: paused until ${until.toISOString()}`)
+          return json({ tiles, paused_until: until.toISOString() })
+        } catch (pauseError) {
+          // Not paused: the next run carries on as usual.
+          console.error('places-worker: could not pause', pauseError)
+          break
+        }
+      }
     }
     return json({ tiles })
   })
@@ -123,7 +148,14 @@ export async function fillTile(
         failError,
       )
     }
-    return { tile_key: tileKey, status: 'failed', error: message }
+    return error instanceof OverpassUnavailableError
+      ? {
+          tile_key: tileKey,
+          status: 'failed',
+          error: message,
+          overpass_unavailable: true,
+        }
+      : { tile_key: tileKey, status: 'failed', error: message }
   }
 }
 

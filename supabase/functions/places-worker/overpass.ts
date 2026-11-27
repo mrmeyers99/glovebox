@@ -270,7 +270,8 @@ export interface FetchOptions {
  * elements. Each server gets an even share of the time left before the
  * deadline. A server that refuses, times out, is rate-limiting (429) or
  * answers with a runtime error (Overpass sends those as a 200 with a
- * "remark") is skipped. Throws, listing each server's error, when none answer.
+ * "remark") is skipped. Throws OverpassUnavailableError, listing each server's error, when none
+ * answer.
  */
 export async function fetchOverpass(
   query: string,
@@ -318,7 +319,14 @@ export async function fetchOverpass(
       errors.push(`${host(server)}: ${messageOf(error)}`)
     }
   }
-  throw new Error(`Overpass unavailable (${errors.join('; ')})`)
+  throw new OverpassUnavailableError(
+    `Overpass unavailable (${errors.join('; ')})`,
+  )
+}
+
+/** No Overpass server answered: they're busy, down or refusing us. */
+export class OverpassUnavailableError extends Error {
+  override name = 'OverpassUnavailableError'
 }
 
 function host(url: string): string {

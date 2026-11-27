@@ -20,6 +20,7 @@ import {
   buildQuery,
   fetchOverpass,
   OVERPASS_SERVERS,
+  OverpassUnavailableError,
   type OverpassElement,
   parseElements,
 } from './overpass.ts'
@@ -254,8 +255,9 @@ Deno.test('fetchOverpass reports every server when none answers', async () => {
     'overpass.kumi.systems': () => answer({ nothing: true }),
     'overpass.private.coffee': () => new Response('<html>oops</html>'),
   })
-  const error = await assertRejects(() =>
-    fetchOverpass('q', { ...options, fetchFn }),
+  const error = await assertRejects(
+    () => fetchOverpass('q', { ...options, fetchFn }),
+    OverpassUnavailableError,
   )
   assertStringIncludes(String(error), 'overpass-api.de: connection reset')
   assertStringIncludes(

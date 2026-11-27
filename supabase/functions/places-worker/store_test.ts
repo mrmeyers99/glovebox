@@ -89,9 +89,22 @@ Deno.test('fail marks the tile failed with its retry time', async () => {
   })
 })
 
+Deno.test('pause upserts the worker pause', async () => {
+  const { calls, store } = fakeClient(() => new Response(null, { status: 201 }))
+  await store.pause(new Date('2026-11-27T02:00:00Z'), 'Overpass unavailable')
+  assertEquals(calls[0].method, 'POST')
+  assertEquals(calls[0].url.pathname, '/rest/v1/worker_pauses')
+  assertEquals(calls[0].body, {
+    worker: 'places-worker',
+    paused_until: '2026-11-27T02:00:00.000Z',
+    reason: 'Overpass unavailable',
+  })
+})
+
 Deno.test('database errors are thrown', async () => {
   const { store } = fakeClient(failure)
   await assertRejects(() => store.claim(1))
   await assertRejects(() => store.store('43.5_-98.5', []))
   await assertRejects(() => store.fail('43.5_-98.5', 'x', new Date()))
+  await assertRejects(() => store.pause(new Date(), 'x'))
 })
