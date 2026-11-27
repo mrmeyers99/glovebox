@@ -1,9 +1,11 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import type { RefObject } from 'react'
+import { legLines } from '../lib/corridor'
 import type { Day, Stop } from '../lib/database.types'
 import type { LatLng } from '../lib/geocode'
 import type { TripSummary } from '../lib/tripMath'
 import type { StopSelection } from './mapView'
+import { useSuggestions, type SuggestionsState } from './useSuggestions'
 
 // Code-split: the map library is only downloaded on the trip page.
 const TripMap = lazy(() => import('./TripMap'))
@@ -29,6 +31,9 @@ export function MapPanel({
   const hasSize = useHasSize(ref)
   // Skipped stops are off the map unless asked for (as faded markers).
   const [showSkipped, setShowSkipped] = useState(false)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const lines = useMemo(() => legLines(summary.legs), [summary])
+  const suggestions = useSuggestions(lines, showSuggestions)
 
   return (
     <div ref={ref} className="map-panel">
@@ -44,18 +49,46 @@ export function MapPanel({
             selection={selection}
             onSelectStop={onSelectStop}
             onAddStopAt={onAddStopAt}
+            suggestions={suggestions.places}
+            corridor={lines}
           />
-          <label className="map-toggle">
-            <input
-              type="checkbox"
-              checked={showSkipped}
-              onChange={(e) => setShowSkipped(e.target.checked)}
-            />
-            Show skipped
-          </label>
+          <div className="map-toggles">
+            <label className="map-toggle">
+              <input
+                type="checkbox"
+                checked={showSkipped}
+                onChange={(e) => setShowSkipped(e.target.checked)}
+              />
+              Show skipped
+            </label>
+            <label className="map-toggle">
+              <input
+                type="checkbox"
+                checked={showSuggestions}
+                onChange={(e) => setShowSuggestions(e.target.checked)}
+              />
+              Suggestions
+            </label>
+            <SuggestionsNote state={suggestions} />
+          </div>
         </Suspense>
       )}
     </div>
+  )
+}
+
+/** What's happening with suggestions, when there's something to say. */
+export function SuggestionsNote({ state }: { state: SuggestionsState }) {
+  let text: string | null = null
+  if (state.error) text = "Couldn't load suggestions. Try again later."
+  else if (state.pending > 0) text = 'Finding places along your route…'
+  else if (state.failed > 0 && state.places.length === 0)
+    text = "Couldn't find places along your route yet."
+  if (!text) return null
+  return (
+    <p className="map-note" role="status">
+      {text}
+    </p>
   )
 }
 

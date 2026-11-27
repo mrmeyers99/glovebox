@@ -729,11 +729,19 @@ button:disabled {
   height: 100%;
 }
 
-.map-toggle {
+.map-toggles {
   position: absolute;
   top: 10px;
   left: 10px;
   z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.375rem;
+  max-width: calc(100% - 4rem);
+}
+
+.map-toggle {
   display: flex;
   align-items: center;
   gap: 0.375rem;
@@ -792,6 +800,138 @@ button:disabled {
 
 .stop-marker[data-skipped][aria-pressed='true'] {
   opacity: 0.8;
+}
+
+/* Trip stops draw above suggested places. */
+.stop-marker-anchor {
+  z-index: 2;
+}
+
+/* Suggested places: a small round chip with the category's icon, larger for
+   the best in its area and faded for the rest. */
+.suggestion-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  font-size: 0.8125rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.suggestion-marker[data-tier='top'] {
+  width: 2rem;
+  height: 2rem;
+  border: 2px solid var(--accent);
+  font-size: 1.0625rem;
+}
+
+.suggestion-marker[data-tier='other'] {
+  width: 1.25rem;
+  height: 1.25rem;
+  font-size: 0.6875rem;
+  opacity: 0.7;
+}
+
+.suggestion-marker[aria-pressed='true'] {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+  opacity: 1;
+}
+
+.map-note {
+  margin: 0;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.suggestion-popup .maplibregl-popup-content {
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.3);
+}
+
+.suggestion-popup .maplibregl-popup-close-button {
+  z-index: 1;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0 6px 0 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.suggestion-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding-bottom: 0.75rem;
+  font-size: 0.875rem;
+}
+
+.suggestion-card > :not(figure) {
+  margin: 0 0.75rem;
+}
+
+.suggestion-card figure {
+  margin: 0;
+}
+
+.suggestion-card img {
+  display: block;
+  width: 100%;
+  max-height: 10rem;
+  object-fit: cover;
+}
+
+.suggestion-card figcaption {
+  padding: 0.125rem 0.75rem;
+  color: var(--muted);
+  font-size: 0.6875rem;
+}
+
+.suggestion-card figcaption a {
+  color: inherit;
+}
+
+.suggestion-card h3 {
+  margin-top: 0.625rem;
+  padding-right: 1rem;
+  font-size: 1rem;
+}
+
+.suggestion-card figure + h3 {
+  margin-top: 0.25rem;
+}
+
+.suggestion-meta {
+  color: var(--muted);
+}
+
+.suggestion-links {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.suggestion-links a {
+  color: var(--accent);
+}
+
+.suggestion-card button {
+  align-self: flex-start;
 }
 
 /* "Add stop here", shown where the map was right-clicked or long-pressed. */
