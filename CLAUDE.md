@@ -20,7 +20,7 @@ Collaborative road-trip planner. Requirements and data model: `docs/requirements
 - `npm run check` — format check, lint, typecheck, unit tests (what CI runs, minus build and DB)
 - `npm run format` — format everything with Prettier
 - `npm run test:coverage` — unit tests with coverage (writes `web/coverage/lcov.info`)
-- `npm run test:db` — apply migrations and run permission tests (needs Postgres via `PG*` env vars)
+- `npm run test:db` — apply migrations and run permission tests (needs Postgres with PostGIS via `PG*` env vars)
 - `deno check . && deno lint && deno test --allow-env` — from `supabase/functions` (not covered by `npm run check`)
 
 A pre-commit hook (husky + lint-staged) formats staged files and lints TypeScript.

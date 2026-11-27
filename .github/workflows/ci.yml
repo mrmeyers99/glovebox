@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17
+        image: postgis/postgis:17-3.5 # Postgres with PostGIS, as on Supabase
         env:
           POSTGRES_PASSWORD: postgres
         ports:
