@@ -76,6 +76,8 @@ export type Stop = {
   arrival_time: string | null
   stay_minutes: number | null
   skipped: boolean
+  /** The suggested place (places.id) the stop was added from, if any. */
+  place_id: number | null
   created_at: string
   updated_at: string
   updated_by: string | null
@@ -175,6 +177,7 @@ export type Database = {
         | 'arrival_time'
         | 'stay_minutes'
         | 'skipped'
+        | 'place_id'
       >
       route_cache: Table<RouteCacheEntry, never, never>
       gas_price_cache: Table<GasPrice, never, never>

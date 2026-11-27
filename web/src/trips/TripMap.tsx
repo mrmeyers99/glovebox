@@ -44,6 +44,7 @@ import {
 } from './mapView'
 import { mapPoint } from './mapAdd'
 import { SuggestionMarkers } from './SuggestionMarkers'
+import { placesInTrip } from './suggestionStop'
 import { useDayPalette } from './useDayPalette'
 
 // MapLibre finds its worker next to its own module file. Vite moves that
@@ -61,6 +62,7 @@ export default function TripMap({
   onAddStopAt,
   suggestions,
   corridor,
+  onAddSuggestion,
 }: {
   days: readonly Day[]
   stops: readonly Stop[]
@@ -74,6 +76,8 @@ export default function TripMap({
   onSelectStop: (stopId: string) => void
   /** Owners and editors: offers "Add stop here" on right-click / long-press. */
   onAddStopAt?: (point: LatLng) => void
+  /** Owners and editors: "Add to trip" on a suggestion's card. */
+  onAddSuggestion?: (place: Suggestion) => void
 }) {
   const mapRef = useRef<MapRef>(null)
   const markers = useMemo(
@@ -88,6 +92,7 @@ export default function TripMap({
     [stops],
   )
   const selectedId = selection?.stopId ?? null
+  const inTrip = useMemo(() => placesInTrip(stops), [stops])
 
   const lines = useMemo(() => routeLines(summary), [summary])
   const highlight = highlightedDay(summary, selectedId)
@@ -173,7 +178,12 @@ export default function TripMap({
         compact={false}
         customAttribution={OSM_ATTRIBUTION}
       />
-      <SuggestionMarkers places={suggestions} lines={corridor} />
+      <SuggestionMarkers
+        places={suggestions}
+        lines={corridor}
+        inTrip={inTrip}
+        onAdd={onAddSuggestion}
+      />
       {markers.map((marker) => (
         <StopMarkerPin
           key={marker.stopId}

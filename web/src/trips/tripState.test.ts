@@ -45,6 +45,7 @@ const makeStop = (id: string, dayId: string, name = id): Stop => ({
   skipped: false,
   created_at: '',
   updated_at: '',
+  place_id: null,
   updated_by: null,
 })
 

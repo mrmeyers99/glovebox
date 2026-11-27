@@ -849,6 +849,55 @@ reset role;
 drop schema vault cascade;
 drop schema net cascade;
 
+-- A stop added from a suggestion remembers its place; the link goes if the
+-- place is pruned from the cache, the stop stays.
+set role service_role;
+insert into public.places (source, source_id, name, kind, category, location)
+  values ('osm', 'node/67', 'Liberty Bell', 'attraction', 'tourism=attraction',
+    extensions.st_point(-75.15, 39.95, 4326)::extensions.geography);
+reset role;
+do $$ begin perform pg_temp.act_as('alice'); end $$;
+insert into public.trip_invites (trip_id, email, role)
+  select id, 'dave@example.com', 'editor' from public.trips where name = 'Cross country';
+reset role;
+do $$ begin perform pg_temp.act_as('dave'); end $$;
+do $$
+declare
+  v_trip uuid;
+  v_place bigint := (select id from public.places where source_id = 'node/67');
+  v_stop uuid;
+begin
+  perform public.accept_my_invites();
+  v_trip := (select id from public.trips where name = 'Cross country');
+  insert into public.stops (trip_id, day_id, position, name, lat, lng, place_id)
+    select v_trip, day_id, 'a5', 'Liberty Bell', 39.95, -75.15, v_place
+      from public.stops where trip_id = v_trip and kind = 'start'
+    returning id into v_stop;
+  assert (select place_id from public.stops where id = v_stop) = v_place,
+    'editor can add a stop with its place';
+  update public.stops set place_id = null where id = v_stop;
+  update public.stops set place_id = v_place where id = v_stop;
+  assert (select place_id from public.stops where id = v_stop) = v_place,
+    'editor can set a stop''s place';
+end $$;
+reset role;
+do $$ begin perform pg_temp.act_as('carol'); end $$;
+do $$ begin
+  update public.stops set place_id = null where name = 'Liberty Bell';
+  assert (select place_id from public.stops where name = 'Liberty Bell') is not null,
+    'viewer cannot change a stop''s place';
+end $$;
+reset role;
+set role service_role;
+delete from public.places where source_id = 'node/67';
+reset role;
+do $$ begin perform pg_temp.act_as('dave'); end $$;
+do $$ begin
+  assert (select place_id from public.stops where name = 'Liberty Bell') is null,
+    'deleting a place unlinks its stops but keeps them';
+end $$;
+reset role;
+
 -- Anonymous users have no access.
 set role anon;
 do $$ begin

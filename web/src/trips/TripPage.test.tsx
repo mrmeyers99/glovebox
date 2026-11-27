@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import {
   afterEach,
@@ -11,6 +11,7 @@ import {
   vi,
 } from 'vitest'
 import type { Day, Stop, Trip } from '../lib/database.types'
+import type { Suggestion } from '../lib/suggestions'
 import { summarizeTrip } from '../lib/tripMath'
 import { toDayInput, toStopInput } from '../lib/tripRows'
 import { TripPage } from './TripPage'
@@ -58,6 +59,7 @@ const stop = (
   skipped: false,
   created_at: '',
   updated_at: '',
+  place_id: null,
   updated_by: null,
 })
 
@@ -72,6 +74,7 @@ const mocks = vi.hoisted(() => ({
   setSkipped: vi.fn(),
   insertDayAfter: vi.fn(),
   days: [] as Day[],
+  mapPanel: {} as Record<string, unknown>,
 }))
 
 vi.mock('./useTrip', () => ({
@@ -114,7 +117,12 @@ vi.mock('./usePresence', () => ({
   }),
 }))
 // The map needs WebGL.
-vi.mock('./MapPanel', () => ({ MapPanel: () => null }))
+vi.mock('./MapPanel', () => ({
+  MapPanel: (props: Record<string, unknown>) => {
+    mocks.mapPanel = props
+    return null
+  },
+}))
 vi.mock('../lib/supabase', () => ({
   supabase: { functions: { invoke: vi.fn() } },
 }))
@@ -283,5 +291,55 @@ describe('TripPage day menu', () => {
     expect(
       screen.queryByRole('button', { name: 'Actions for Day 1' }),
     ).toBeNull()
+  })
+})
+
+describe('TripPage, adding a suggested place', () => {
+  const corn = {
+    id: 42,
+    name: 'Corn Palace',
+    lat: 0.1,
+    lng: 0.1,
+  } as Suggestion
+
+  it('opens the stop form for it on its default day', () => {
+    renderPage()
+    const add = mocks.mapPanel.onAddSuggestion as (p: Suggestion) => void
+    act(() => add(corn))
+    screen.getByRole('heading', { name: 'Add to trip' })
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveProperty(
+      'value',
+      'Corn Palace',
+    )
+    expect(screen.getByRole('combobox', { name: 'Day' })).toHaveProperty(
+      'value',
+      'd1',
+    )
+  })
+
+  it('also adds a stop at a spot on the map', () => {
+    renderPage()
+    const addAt = mocks.mapPanel.onAddStopAt as (at: {
+      lat: number
+      lng: number
+    }) => void
+    act(() => addAt({ lat: 1, lng: 2 }))
+    screen.getByRole('heading', { name: 'Add a stop here' })
+    cleanup()
+    renderPage()
+    fireEvent.click(screen.getAllByRole('button', { name: /Add stop/ })[0])
+    screen.getByRole('heading', { name: 'Add a stop to Day 1' })
+  })
+
+  it("isn't offered to viewers or trips without days", () => {
+    mocks.canEdit = false
+    renderPage()
+    expect(mocks.mapPanel.onAddSuggestion).toBeUndefined()
+    cleanup()
+    mocks.canEdit = true
+    mocks.days = []
+    mocks.stops = []
+    renderPage()
+    expect(mocks.mapPanel.onAddSuggestion).toBeUndefined()
   })
 })

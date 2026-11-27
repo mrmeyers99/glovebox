@@ -47,10 +47,16 @@ function useMapView(): View {
 export function SuggestionMarkers({
   places,
   lines,
+  inTrip,
+  onAdd,
 }: {
   /** Best first, from useSuggestions. */
   places: readonly Suggestion[]
   lines: LatLng[][]
+  /** Ids of the places the trip's stops were added from. */
+  inTrip: ReadonlySet<number>
+  /** Owners and editors: add a place to the trip as a stop. */
+  onAdd?: (place: Suggestion) => void
 }) {
   const { zoom, bounds } = useMapView()
   const visible = useMemo(
@@ -68,6 +74,7 @@ export function SuggestionMarkers({
           key={place.id}
           place={place}
           selected={place.id === openId}
+          inTrip={inTrip.has(place.id)}
           onSelect={setOpenId}
         />
       ))}
@@ -81,7 +88,18 @@ export function SuggestionMarkers({
           className="suggestion-popup"
           onClose={() => setOpenId(null)}
         >
-          <SuggestionCard place={open} lines={lines} />
+          <SuggestionCard
+            place={open}
+            lines={lines}
+            inTrip={inTrip.has(open.id)}
+            onAdd={
+              onAdd &&
+              ((place) => {
+                setOpenId(null)
+                onAdd(place)
+              })
+            }
+          />
         </Popup>
       )}
     </>
@@ -91,10 +109,12 @@ export function SuggestionMarkers({
 const SuggestionPin = memo(function SuggestionPin({
   place,
   selected,
+  inTrip,
   onSelect,
 }: {
   place: Suggestion
   selected: boolean
+  inTrip: boolean
   onSelect: (id: number) => void
 }) {
   const { label, icon } = categoryInfo(place.category)
@@ -116,8 +136,9 @@ const SuggestionPin = memo(function SuggestionPin({
         type="button"
         className="suggestion-marker"
         data-tier={tier}
+        data-in-trip={inTrip || undefined}
         aria-pressed={selected}
-        aria-label={`${place.name} (${label})`}
+        aria-label={`${place.name} (${inTrip ? `${label}, in your trip` : label})`}
         title={place.name}
       >
         <span aria-hidden="true">{icon}</span>

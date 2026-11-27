@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { Stop, Trip } from '../lib/database.types'
 import type { LatLng } from '../lib/geocode'
+import type { Suggestion } from '../lib/suggestions'
 import { DeleteDayDialog, DayNotesDialog } from './DayDialogs'
 import { DayListPanel } from './DayListPanel'
 import { DayMenu } from './DayMenu'
@@ -11,7 +12,12 @@ import type { StopSelection } from './mapView'
 import { PresenceAvatars } from './PresenceAvatars'
 import { editingFocus } from './presence'
 import { ShareDialog } from './ShareDialog'
-import { StopDialog, type StopDialogMode } from './StopDialog'
+import {
+  StopDialog,
+  type StopDialogMode,
+  type SuggestedStop,
+} from './StopDialog'
+import { suggestedPlacement } from './suggestionStop'
 import { TripEndDialog } from './TripEndDialog'
 import type { TripEndKind } from './tripEnds'
 import { TripSettingsDialog } from './TripSettingsDialog'
@@ -47,7 +53,13 @@ export function TripPage() {
   // The stop dialog: adding to a day (optionally at a spot picked on the
   // map), or the id of the stop opened.
   const [stopDialog, setStopDialog] = useState<
-    | { type: 'add'; dayId: string; dayNumber: number; at?: LatLng }
+    | {
+        type: 'add'
+        dayId: string
+        dayNumber: number
+        at?: LatLng
+        suggestion?: SuggestedStop
+      }
     | { type: 'edit' | 'delete'; stopId: string }
     | null
   >(null)
@@ -105,6 +117,26 @@ export function TripPage() {
       if (day) setStopDialog({ type: 'add', ...day, at })
     },
     [days, stops, selection],
+  )
+  // A suggested place goes on the day whose route passes closest to it,
+  // between the stops it lies between.
+  const addSuggestion = useCallback(
+    (place: Suggestion) => {
+      const at = { lat: place.lat, lng: place.lng }
+      const placement = suggestedPlacement(days, summary.legs, [
+        place.lat,
+        place.lng,
+      ])
+      if (!placement) return
+      const { beforeStopId, ...day } = placement
+      setStopDialog({
+        type: 'add',
+        ...day,
+        at,
+        suggestion: { placeId: place.id, name: place.name, beforeStopId },
+      })
+    },
+    [days, summary.legs],
   )
   // Resolved on every render so the dialog follows live changes; it closes
   // if the stop is deleted meanwhile.
@@ -251,6 +283,9 @@ export function TripPage() {
           selection={selection}
           onSelectStop={selectFromMap}
           onAddStopAt={canEdit && days.length > 0 ? addStopAt : undefined}
+          onAddSuggestion={
+            canEdit && days.length > 0 ? addSuggestion : undefined
+          }
         />
       </section>
 
@@ -313,9 +348,11 @@ export function TripPage() {
           // A fresh form for each stop opened.
           key={
             stopDialogMode.type === 'add'
-              ? stopDialogMode.at
-                ? `add:${stopDialogMode.at.lat},${stopDialogMode.at.lng}`
-                : `add:${stopDialogMode.dayId}`
+              ? stopDialogMode.suggestion
+                ? `add:place:${stopDialogMode.suggestion.placeId}`
+                : stopDialogMode.at
+                  ? `add:${stopDialogMode.at.lat},${stopDialogMode.at.lng}`
+                  : `add:${stopDialogMode.dayId}`
               : `${stopDialogMode.type}:${stopDialogMode.stop.id}`
           }
           tripId={trip.id}

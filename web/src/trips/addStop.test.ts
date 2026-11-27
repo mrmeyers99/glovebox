@@ -70,6 +70,7 @@ const makeStop = (
   skipped: false,
   created_at: '',
   updated_at: '',
+  place_id: null,
   updated_by: null,
   ...patch,
 })
