@@ -544,6 +544,158 @@ do $$ begin
 end $$;
 reset role;
 
+-- Tile fill worker: claiming due tiles, storing a tile's places, and the
+-- pg_cron entry point. Service role only.
+set role service_role;
+insert into public.place_tiles (tile_key, status, requested_at, fetched_at, attempts, next_attempt_at) values
+  ('10.0_10.0', 'pending',  now() - interval '1 minute', null, 0, null),
+  ('10.0_10.5', 'pending',  now() - interval '2 minutes', null, 0, null),
+  ('10.0_11.0', 'failed',   now() - interval '1 hour', null, 2, now() - interval '1 second'),
+  ('10.0_11.5', 'failed',   now() - interval '2 hours', null, 2, now() + interval '1 hour'),
+  ('10.0_12.0', 'fetching', now() - interval '3 hours', null, 1, now() - interval '1 second'),
+  ('10.0_12.5', 'fetching', now() - interval '4 hours', null, 1, now() + interval '4 minutes'),
+  ('10.0_13.0', 'done',     now() - interval '1 year', now() - interval '91 days', 0, null),
+  ('10.0_13.5', 'done',     now() - interval '1 year', now() - interval '89 days', 0, null);
+do $$
+declare
+  v_claimed text[];
+begin
+  select array_agg(tile_key order by tile_key) into v_claimed
+    from public.claim_place_tiles(2);
+  assert v_claimed = array['10.0_10.0', '10.0_10.5'],
+    'claim takes pending tiles first, oldest requested first: ' || v_claimed::text;
+  select array_agg(tile_key order by tile_key) into v_claimed
+    from public.claim_place_tiles(10);
+  assert v_claimed = array['10.0_11.0', '10.0_12.0', '10.0_13.0'],
+    'claim takes failed tiles past back-off, expired claims and done tiles older than 90 days: '
+    || coalesce(v_claimed::text, 'none');
+  assert not exists (select 1 from public.claim_place_tiles(10)),
+    'claimed tiles are not claimed again during their lease';
+  assert (select attempts from public.place_tiles where tile_key = '10.0_11.0') = 3,
+    'claiming counts the attempt';
+  assert (select status from public.place_tiles where tile_key = '10.0_13.0') = 'fetching'
+    and (select next_attempt_at from public.place_tiles where tile_key = '10.0_13.0')
+      between now() + interval '4 minutes' and now() + interval '6 minutes',
+    'a claimed tile is fetching, with a 5-minute lease';
+  assert not exists (select 1 from public.claim_place_tiles(0)), 'claim of 0 takes nothing';
+end $$;
+
+-- Storing a tile: places outside it are ignored, parents are linked by OSM
+-- id, and places it no longer returns are deleted.
+do $$
+declare
+  v_count integer;
+begin
+  v_count := public.store_place_tile('10.0_10.0', '[
+    {"source_id": "way/10", "name": "Big Park", "kind": "attraction", "category": "leisure=park",
+     "lat": 10.2, "lng": 10.2, "wikidata": "Q10", "tags": {"leisure": "park"}},
+    {"source_id": "node/11", "name": "Park Camp", "kind": "campground", "category": "tourism=camp_site",
+     "lat": 10.21, "lng": 10.21, "parent_source_id": "way/10"},
+    {"source_id": "node/12", "name": "Old Fort", "kind": "attraction", "category": "historic=fort",
+     "lat": 10.3, "lng": 10.3},
+    {"source_id": "node/13", "name": "Next Door", "kind": "attraction", "category": "historic=fort",
+     "lat": 10.3, "lng": 10.6}
+  ]');
+  assert v_count = 3, 'stores the places in the tile, not ones in a neighbour: ' || v_count;
+  assert not exists (select 1 from public.places where source_id = 'node/13'),
+    'a place in another tile is left to that tile';
+  assert (select p.source_id from public.places c join public.places p on p.id = c.parent_place_id
+    where c.source_id = 'node/11') = 'way/10', 'a place is linked to its parent';
+  assert (select status from public.place_tiles where tile_key = '10.0_10.0') = 'done'
+    and (select attempts from public.place_tiles where tile_key = '10.0_10.0') = 0
+    and (select next_attempt_at from public.place_tiles where tile_key = '10.0_10.0') is null,
+    'storing marks the tile done and resets attempts';
+
+  update public.places set enriched_at = now(), sitelinks = 5 where source_id in ('way/10', 'node/12');
+  insert into public.places (source, source_id, name, kind, category, location)
+    values ('ridb', '999', 'Federal Camp', 'campground', 'ridb',
+            extensions.st_point(10.4, 10.4, 4326)::extensions.geography);
+  v_count := public.store_place_tile('10.0_10.0', '[
+    {"source_id": "way/10", "name": "Big State Park", "kind": "attraction", "category": "leisure=park",
+     "lat": 10.2, "lng": 10.2, "wikidata": "Q11"},
+    {"source_id": "node/12", "name": "Old Fort", "kind": "attraction", "category": "historic=fort",
+     "lat": 10.3, "lng": 10.3}
+  ]');
+  assert v_count = 2, 'refetch stores 2';
+  assert not exists (select 1 from public.places where source_id = 'node/11'),
+    'a place the tile no longer returns is deleted';
+  assert exists (select 1 from public.places where source = 'ridb' and source_id = '999'),
+    'places from other sources are kept';
+  assert (select name from public.places where source_id = 'way/10') = 'Big State Park'
+    and (select tags from public.places where source_id = 'way/10') = '{}',
+    'refetch updates a place';
+  assert (select enriched_at from public.places where source_id = 'way/10') is null
+    and (select sitelinks from public.places where source_id = 'way/10') = 5,
+    'a new Wikidata item resets enrichment but keeps the old signals until then';
+  assert (select enriched_at from public.places where source_id = 'node/12') is not null,
+    'an unchanged place keeps its enrichment';
+
+  assert public.store_place_tile('10.0_10.0', '[]') = 0, 'an empty tile stores nothing';
+  assert not exists (select 1 from public.places where source = 'osm' and tile_key = '10.0_10.0'),
+    'an empty tile removes its OSM places';
+  begin
+    perform public.store_place_tile('20.0_20.0', '[]');
+    assert false, 'storing an unknown tile fails';
+  exception when no_data_found then null;
+  end;
+end $$;
+reset role;
+
+do $$ begin perform pg_temp.act_as('alice'); end $$;
+do $$ begin
+  begin
+    perform public.claim_place_tiles(1);
+    assert false, 'signed-in user cannot claim tiles';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.store_place_tile('10.0_10.0', '[]');
+    assert false, 'signed-in user cannot store tiles';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform public.invoke_places_worker();
+    assert false, 'signed-in user cannot start the worker';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+set role service_role;
+do $$ begin
+  perform public.invoke_places_worker();
+  assert false, 'only the database owner (pg_cron) starts the worker';
+exception when insufficient_privilege then null;
+end $$;
+reset role;
+
+-- The pg_cron entry point, with stand-ins for Supabase's Vault and pg_net.
+create schema vault;
+create table vault.decrypted_secrets (name text primary key, decrypted_secret text);
+create schema net;
+create table net.calls (url text, headers jsonb, body jsonb, timeout_milliseconds integer);
+create function net.http_post(url text, body jsonb, params jsonb default '{}', headers jsonb default '{}',
+  timeout_milliseconds integer default 5000) returns bigint
+language sql as $$
+  insert into net.calls values (url, headers, body, timeout_milliseconds);
+  select 42::bigint
+$$;
+do $$ begin
+  update public.place_tiles set status = 'done', fetched_at = now(), next_attempt_at = null;
+  assert public.invoke_places_worker() is null, 'no call while no tile is due';
+  insert into public.place_tiles (tile_key) values ('11.0_11.0');
+  assert public.invoke_places_worker() is null, 'no call while the Vault secrets are missing';
+  insert into vault.decrypted_secrets values ('project_url', 'https://ref.supabase.co/'),
+    ('service_role_key', '');
+  assert public.invoke_places_worker() is null, 'no call while a Vault secret is empty';
+  update vault.decrypted_secrets set decrypted_secret = 'sb_secret_x' where name = 'service_role_key';
+  assert public.invoke_places_worker() = 42, 'calls the worker when a tile is due';
+  assert (select url from net.calls) = 'https://ref.supabase.co/functions/v1/places-worker'
+    and (select headers ->> 'apikey' from net.calls) = 'sb_secret_x',
+    'calls places-worker with the secret key';
+end $$;
+drop schema vault cascade;
+drop schema net cascade;
+
 -- Anonymous users have no access.
 set role anon;
 do $$ begin

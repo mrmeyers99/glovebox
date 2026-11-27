@@ -17,7 +17,7 @@ export interface Candidate {
 }
 
 /** tourism=* values that make a place an attraction on their own. */
-const TOURISM_ATTRACTIONS = new Set([
+export const TOURISM_ATTRACTIONS: ReadonlySet<string> = new Set([
   'attraction',
   'museum',
   'viewpoint',
@@ -27,13 +27,19 @@ const TOURISM_ATTRACTIONS = new Set([
   'aquarium',
 ])
 
-const TOURISM_CAMPGROUNDS = new Set(['camp_site', 'caravan_site'])
+export const TOURISM_CAMPGROUNDS: ReadonlySet<string> = new Set([
+  'camp_site',
+  'caravan_site',
+])
 
 /** tourism=artwork is a candidate only for these artwork_type values. */
-const ARTWORK_TYPES = new Set(['statue', 'sculpture'])
+export const ARTWORK_TYPES: ReadonlySet<string> = new Set([
+  'statue',
+  'sculpture',
+])
 
 /** historic=* values that are worth a stop without anything else. */
-const HISTORIC_SITES = new Set([
+export const HISTORIC_SITES: ReadonlySet<string> = new Set([
   'monument',
   'castle',
   'fort',
@@ -51,7 +57,7 @@ const HISTORIC_SITES = new Set([
  * historic=* values that are mostly minor (plaques, ordinary old buildings):
  * candidates only when they have a Wikidata item, or are a statue/sculpture.
  */
-const HISTORIC_NEEDS_WIKIDATA = new Set([
+export const HISTORIC_NEEDS_WIKIDATA: ReadonlySet<string> = new Set([
   'memorial',
   'building',
   'house',
@@ -60,17 +66,25 @@ const HISTORIC_NEEDS_WIKIDATA = new Set([
   'bridge',
 ])
 
-const MEMORIAL_STATUES = new Set(['statue', 'sculpture', 'bust'])
+export const MEMORIAL_STATUES: ReadonlySet<string> = new Set([
+  'statue',
+  'sculpture',
+  'bust',
+])
 
 /** Parks and reserves: so many that only those with Wikidata are kept. */
-const PARKS: ReadonlyArray<readonly [string, string]> = [
+export const PARKS: ReadonlyArray<readonly [string, string]> = [
   ['boundary', 'national_park'],
   ['leisure', 'nature_reserve'],
   ['leisure', 'park'],
   ['boundary', 'protected_area'],
 ]
 
-const NATURAL = new Set(['waterfall', 'peak', 'cave_entrance'])
+export const NATURAL: ReadonlySet<string> = new Set([
+  'waterfall',
+  'peak',
+  'cave_entrance',
+])
 
 /**
  * Decides whether an OSM element is a suggestion candidate, and if so what

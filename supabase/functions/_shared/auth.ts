@@ -29,3 +29,14 @@ export async function requireUser(req: Request): Promise<SignedInUser> {
   })
   return { user: auth.userClaims, supabase }
 }
+
+/**
+ * Accepts only server-to-server calls made with one of the project's secret
+ * (service-role) API keys in the `apikey` header, such as pg_cron's calls to
+ * background workers. Throws HttpError(401) otherwise, including for
+ * signed-in users. For functions that must never be called from the app.
+ */
+export async function requireServiceRole(req: Request): Promise<void> {
+  const { error } = await verifyAuth(req, { auth: 'secret:*' })
+  if (error) throw new HttpError(401, 'Service role required')
+}

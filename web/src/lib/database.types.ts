@@ -107,7 +107,10 @@ export type PlaceTile = {
   requested_at: string
   fetched_at: string | null
   error: string | null
+  /** Consecutive failed fetches; reset to 0 when a fetch succeeds. */
   attempts: number
+  /** When a 'failed' tile may be retried, or a 'fetching' tile's claim expires. */
+  next_attempt_at: string | null
 }
 
 export type Place = {
@@ -173,6 +176,29 @@ export type Database = {
     Functions: {
       accept_my_invites: { Args: Record<never, never>; Returns: number }
       place_tile_key: { Args: { lat: number; lng: number }; Returns: string }
+      /** Service role only (the places-worker Edge Function). */
+      claim_place_tiles: {
+        Args: { p_limit?: number; p_lease?: string }
+        Returns: { tile_key: string; attempts: number }[]
+      }
+      /** Service role only (the places-worker Edge Function). */
+      store_place_tile: {
+        Args: {
+          p_tile_key: string
+          p_places: {
+            source_id: string
+            name: string
+            kind: PlaceKind
+            category: string
+            lat: number
+            lng: number
+            wikidata?: string | null
+            tags?: Record<string, string>
+            parent_source_id?: string | null
+          }[]
+        }
+        Returns: number
+      }
       move_stops: {
         Args: {
           p_moves: {
