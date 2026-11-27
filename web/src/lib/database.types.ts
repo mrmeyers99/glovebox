@@ -4,6 +4,9 @@
 export type TripRole = 'owner' | 'editor' | 'viewer'
 export type StopKind = 'start' | 'waypoint' | 'end'
 export type CostCategory = 'lodging' | 'food' | 'activity' | 'other'
+export type PlaceTileStatus = 'pending' | 'fetching' | 'done' | 'failed'
+export type PlaceSource = 'osm' | 'ridb'
+export type PlaceKind = 'attraction' | 'campground'
 
 type Table<Row, Required extends keyof Row, Optional extends keyof Row> = {
   Row: Row
@@ -96,6 +99,41 @@ export type GasPrice = {
   fetched_at: string
 }
 
+// A 0.5° map tile of the places cache, keyed by its south-west corner
+// ('42.5_-96.5'; see public.place_tile_key).
+export type PlaceTile = {
+  tile_key: string
+  status: PlaceTileStatus
+  requested_at: string
+  fetched_at: string | null
+  error: string | null
+  attempts: number
+}
+
+export type Place = {
+  id: number
+  source: PlaceSource
+  source_id: string
+  wikidata: string | null
+  name: string
+  kind: PlaceKind
+  category: string
+  // PostGIS geography(Point); PostgREST returns it as hex EWKB.
+  location: string
+  tile_key: string // generated from location
+  tags: Record<string, string>
+  pageviews_month: number | null
+  sitelinks: number | null
+  commons_files: number | null
+  enriched_at: string | null
+  image_file: string | null
+  image_credit: string | null
+  image_license: string | null
+  score: number | null
+  parent_place_id: number | null
+  fetched_at: string
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -127,10 +165,14 @@ export type Database = {
       >
       route_cache: Table<RouteCacheEntry, never, never>
       gas_price_cache: Table<GasPrice, never, never>
+      // Written only by Edge Functions (service role).
+      place_tiles: Table<PlaceTile, never, never>
+      places: Table<Place, never, never>
     }
     Views: Record<never, never>
     Functions: {
       accept_my_invites: { Args: Record<never, never>; Returns: number }
+      place_tile_key: { Args: { lat: number; lng: number }; Returns: string }
       move_stops: {
         Args: {
           p_moves: {

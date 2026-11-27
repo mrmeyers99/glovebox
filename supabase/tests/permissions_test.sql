@@ -433,6 +433,117 @@ exception when insufficient_privilege then null;
 end $$;
 reset role;
 
+-- Places cache (Discovery): shared by everyone, written only by the place
+-- workers (service role). Signed-in users can read it but not change it.
+do $$ begin
+  assert public.place_tile_key(42.7, -96.2) = '42.5_-96.5', 'tile key rounds down to 0.5°';
+  assert public.place_tile_key(42.2, -97) = '42.0_-97.0', 'a point on a grid line is in the tile to its north / east';
+  assert public.place_tile_key(-0.2, 0.2) = '-0.5_0.0', 'tile keys work around 0°';
+end $$;
+
+set role service_role;
+insert into public.place_tiles (tile_key) values ('43.5_-98.5');
+update public.place_tiles set status = 'done', fetched_at = now(), attempts = 1
+  where tile_key = '43.5_-98.5';
+insert into public.places (source, source_id, wikidata, name, kind, category, location, tags)
+  values
+    ('osm', 'way/1', 'Q1048837', 'Corn Palace', 'attraction', 'tourism=attraction',
+      extensions.st_point(-98.0298, 43.7140, 4326)::extensions.geography, '{"website": "https://cornpalace.com"}'),
+    ('osm', 'node/2', null, 'Lost Island Theme Park', 'attraction', 'tourism=theme_park',
+      extensions.st_point(-92.4067, 42.4415, 4326)::extensions.geography, '{}');
+insert into public.places (source, source_id, name, kind, category, location, parent_place_id)
+  select 'osm', 'node/3', 'Matugani', 'attraction', 'attraction=roller_coaster',
+    extensions.st_point(-92.4070, 42.4420, 4326)::extensions.geography, id
+  from public.places where source_id = 'node/2';
+update public.places set pageviews_month = 9000, sitelinks = 12, commons_files = 80,
+  score = 5.1, enriched_at = now() where source_id = 'way/1';
+do $$ begin
+  begin
+    insert into public.places (source, source_id, name, kind, category, location)
+      values ('osm', 'way/1', 'Corn Palace again', 'attraction', 'tourism=attraction',
+        extensions.st_point(-98, 43.7, 4326)::extensions.geography);
+    assert false, 'a source id is stored once';
+  exception when unique_violation then null;
+  end;
+  begin
+    insert into public.place_tiles (tile_key) values ('43.7_-98.5');
+    assert false, 'tile keys are on the 0.5° grid';
+  exception when check_violation then null;
+  end;
+end $$;
+reset role;
+
+do $$ begin perform pg_temp.act_as('dave'); end $$;
+do $$ begin
+  assert (select tile_key from public.places where source_id = 'way/1') = '43.5_-98.5',
+    'a place''s tile comes from its location; any signed-in user can read places';
+  assert (select status from public.place_tiles where tile_key = '43.5_-98.5') = 'done',
+    'any signed-in user can read tiles';
+  assert (select p.name from public.places c join public.places p on p.id = c.parent_place_id
+    where c.name = 'Matugani') = 'Lost Island Theme Park', 'a place can sit inside another';
+  assert (select count(*) from public.places
+    where extensions.st_dwithin(location,
+      extensions.st_point(-98.03, 43.71, 4326)::extensions.geography, 1000)) = 1,
+    'places can be found by distance';
+  begin
+    insert into public.place_tiles (tile_key) values ('40.0_-75.0');
+    assert false, 'signed-in user cannot queue tiles directly';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.place_tiles set status = 'pending';
+    assert false, 'signed-in user cannot update place_tiles';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    delete from public.place_tiles;
+    assert false, 'signed-in user cannot delete from place_tiles';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.places (source, source_id, name, kind, category, location)
+      values ('osm', 'node/9', 'Fake', 'attraction', 'tourism=museum',
+        extensions.st_point(-75, 40, 4326)::extensions.geography);
+    assert false, 'signed-in user cannot write places';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    update public.places set score = 100;
+    assert false, 'signed-in user cannot update places';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    delete from public.places;
+    assert false, 'signed-in user cannot delete from places';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+set role anon;
+do $$ begin
+  begin
+    perform 1 from public.places;
+    assert false, 'anon cannot read places';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform 1 from public.place_tiles;
+    assert false, 'anon cannot read place_tiles';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+-- Deleting a park keeps the places inside it, unattached.
+set role service_role;
+delete from public.places where source_id = 'node/2';
+do $$ begin
+  assert (select parent_place_id from public.places where source_id = 'node/3') is null,
+    'deleting a parent place detaches its children';
+end $$;
+reset role;
+
 -- Anonymous users have no access.
 set role anon;
 do $$ begin

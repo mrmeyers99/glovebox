@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Applies the migrations to a fresh Postgres database and runs the permission
-# tests. Expects a running Postgres reachable via the usual PG* environment
+# tests. Expects a running Postgres with PostGIS, reachable via the usual PG* environment
 # variables (PGHOST, PGPORT, PGUSER, PGPASSWORD). Used by CI.
 set -euo pipefail
 
