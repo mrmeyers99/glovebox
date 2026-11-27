@@ -2,7 +2,7 @@
 // Shared cache data, not trip data (see _shared/admin.ts).
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { adminClient } from '../_shared/admin.ts'
-import type { PlaceKind } from '../_shared/places/mod.ts'
+import type { CampgroundAmenities, PlaceKind } from '../_shared/places/mod.ts'
 
 export interface ClaimedTile {
   tile_key: string
@@ -19,7 +19,8 @@ export interface StoredPlace {
   lat: number
   lng: number
   wikidata: string | null
-  tags: Record<string, string>
+  /** OSM tags; a campground's also hold `amenities`. */
+  tags: Record<string, string | CampgroundAmenities>
   parent_source_id: string | null
 }
 

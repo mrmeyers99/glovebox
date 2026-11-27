@@ -1,7 +1,9 @@
 {
   "version": 0.6,
   "generator": "Overpass API (test fixture, shaped like tile 43.5_-98.5)",
-  "osm3s": { "timestamp_osm_base": "2026-11-26T00:00:00Z" },
+  "osm3s": {
+    "timestamp_osm_base": "2026-11-26T00:00:00Z"
+  },
   "elements": [
     {
       "type": "node",
@@ -30,7 +32,9 @@
       "id": 103,
       "lat": 43.65,
       "lon": -98.2,
-      "tags": { "tourism": "viewpoint" }
+      "tags": {
+        "tourism": "viewpoint"
+      }
     },
     {
       "type": "node",
@@ -55,6 +59,35 @@
         "name": "Bad Item Museum",
         "tourism": "museum",
         "wikidata": "Q1;Q2"
+      }
+    },
+    {
+      "type": "node",
+      "id": 106,
+      "lat": 43.62,
+      "lon": -98.31,
+      "tags": {
+        "tourism": "camp_site",
+        "fee": "no",
+        "toilets": "yes"
+      }
+    },
+    {
+      "type": "node",
+      "id": 107,
+      "lat": 43.7405,
+      "lon": -98.0505,
+      "tags": {
+        "tourism": "camp_site"
+      }
+    },
+    {
+      "type": "node",
+      "id": 108,
+      "lat": 43.9,
+      "lon": -98.45,
+      "tags": {
+        "tourism": "caravan_site"
       }
     },
     {
@@ -86,7 +119,29 @@
         "name": "Lake Mitchell Park",
         "leisure": "park",
         "wikidata": "Q6477924"
-      }
+      },
+      "geometry": [
+        {
+          "lat": 43.72,
+          "lon": -98.08
+        },
+        {
+          "lat": 43.72,
+          "lon": -98.02
+        },
+        {
+          "lat": 43.76,
+          "lon": -98.02
+        },
+        {
+          "lat": 43.76,
+          "lon": -98.08
+        },
+        {
+          "lat": 43.72,
+          "lon": -98.08
+        }
+      ]
     },
     {
       "type": "way",
@@ -106,7 +161,46 @@
     {
       "type": "way",
       "id": 204,
-      "tags": { "name": "No Bounds Fort", "historic": "fort" }
+      "tags": {
+        "name": "No Bounds Fort",
+        "historic": "fort"
+      }
+    },
+    {
+      "type": "way",
+      "id": 205,
+      "bounds": {
+        "minlat": 43.6,
+        "minlon": -98.33,
+        "maxlat": 43.64,
+        "maxlon": -98.29
+      },
+      "geometry": [
+        {
+          "lat": 43.6,
+          "lon": -98.33
+        },
+        {
+          "lat": 43.6,
+          "lon": -98.29
+        },
+        {
+          "lat": 43.64,
+          "lon": -98.29
+        },
+        {
+          "lat": 43.64,
+          "lon": -98.33
+        },
+        {
+          "lat": 43.6,
+          "lon": -98.33
+        }
+      ],
+      "tags": {
+        "name": "Firesteel Park",
+        "leisure": "park"
+      }
     },
     {
       "type": "relation",
@@ -117,7 +211,10 @@
         "maxlat": 43.62,
         "maxlon": -98.43
       },
-      "tags": { "name": "Old Fort Site", "historic": "archaeological_site" }
+      "tags": {
+        "name": "Old Fort Site",
+        "historic": "archaeological_site"
+      }
     }
   ]
 }

@@ -126,7 +126,8 @@ export type Place = {
   // PostGIS geography(Point); PostgREST returns it as hex EWKB.
   location: string
   tile_key: string // generated from location
-  tags: Record<string, string>
+  /** OSM tags; a campground's also hold `amenities` (normalised, see _shared/places/amenities.ts). */
+  tags: Record<string, unknown>
   /** English Wikipedia user views per month, averaged over 12 months. */
   pageviews_month: number | null
   sitelinks: number | null
@@ -207,7 +208,7 @@ export type Database = {
             lat: number
             lng: number
             wikidata?: string | null
-            tags?: Record<string, string>
+            tags?: Record<string, unknown>
             parent_source_id?: string | null
           }[]
         }
@@ -257,7 +258,13 @@ export type Database = {
           | 'image_credit'
           | 'image_license'
           | 'parent_place_id'
-        > & { lat: number; lng: number; score: number })[]
+        > & {
+          lat: number
+          lng: number
+          score: number
+          /** The parent place's score; null without a parent or until scored. */
+          parent_score: number | null
+        })[]
       }
       // Done tiles that still have unscored places of a kind.
       scoring_place_tiles: {

@@ -89,17 +89,17 @@ export const NATURAL: ReadonlySet<string> = new Set([
 /**
  * Decides whether an OSM element is a suggestion candidate, and if so what
  * kind and category. Returns null for everything else, including:
- * - unnamed elements (a suggestion needs a name);
+ * - unnamed elements (a suggestion needs a name), except campgrounds, which
+ *   are worth suggesting anyway and are named after their park later;
  * - roads, historic districts, plain churches and cemeteries, and anything
  *   tagged just historic=yes, unless they are also tourism-tagged.
  */
 export function classifyCandidate(tags: OsmTags): Candidate | null {
-  if (!tags.name?.trim()) return null
-
   const tourism = tags.tourism
   if (tourism && TOURISM_CAMPGROUNDS.has(tourism)) {
     return { kind: 'campground', category: `tourism=${tourism}` }
   }
+  if (!tags.name?.trim()) return null
   if (tourism && TOURISM_ATTRACTIONS.has(tourism)) {
     return attraction(`tourism=${tourism}`)
   }
