@@ -1,0 +1,415 @@
+<title>Would you stop here?</title>
+<meta name="claude:viewport-fit-sides" content="cover" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link
+  href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;800&display=swap"
+  rel="stylesheet"
+/>
+<style>
+  /* VOICE everyday: a quick sorting task on a road trip
+     IDEA a highway mile-marker log: stops in route order, grouped by stretch of road
+     PICTURE the route strip at the top, one tick per place, filling in as you label
+     COLOUR white ground, near-black ink, highway green for stop, amber for maybe, grey for no
+     TYPE Figtree 800 for headings, Figtree for text
+     LAYOUT sticky progress strip, then one list; rows stack their buttons under the name on phones */
+  :root {
+    color-scheme: light dark;
+    --bg: light-dark(#ffffff, #0f1412);
+    --ink: light-dark(#14181a, #e8ece9);
+    --muted: light-dark(#5b6560, #9aa59f);
+    --rule: light-dark(#e2e6e3, #26302b);
+    --panel: light-dark(#f4f7f5, #17201c);
+    --stop: light-dark(#0b7a3e, #3fbf74);
+    --maybe: light-dark(#b86e00, #f0a83a);
+    --no: light-dark(#6b7470, #8a948f);
+    --on: light-dark(#ffffff, #0f1412);
+  }
+  :root[data-theme='light'] {
+    color-scheme: light;
+  }
+  :root[data-theme='dark'] {
+    color-scheme: dark;
+  }
+  * {
+    box-sizing: border-box;
+    min-width: 0;
+  }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font:
+      16px/1.5 Figtree,
+      system-ui,
+      sans-serif;
+    overflow-x: clip;
+  }
+  .wrap {
+    max-width: 880px;
+    margin: 0 auto;
+    padding-left: max(5vw, 16px, env(safe-area-inset-left, 0px));
+    padding-right: max(5vw, 16px, env(safe-area-inset-right, 0px));
+  }
+  header {
+    padding-block: 28px 8px;
+  }
+  h1 {
+    font-weight: 800;
+    font-size: clamp(32px, 6vw, 44px);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin: 0 0 8px;
+  }
+  .lede {
+    color: var(--muted);
+    margin: 0;
+    max-width: 62ch;
+  }
+  .bar {
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    z-index: 2;
+    background: var(--bg);
+    border-bottom: 1px solid var(--rule);
+    padding-block: 12px;
+  }
+  .bar .wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    align-items: center;
+  }
+  .count {
+    font-weight: 800;
+    font-size: 20px;
+    white-space: nowrap;
+  }
+  .tally {
+    color: var(--muted);
+    font-size: 14px;
+    flex: 1 1 16em;
+  }
+  .strip {
+    flex-basis: 100%;
+    display: flex;
+    gap: 2px;
+    height: 14px;
+  }
+  .strip i {
+    flex: 1;
+    background: var(--rule);
+    border-radius: 2px;
+  }
+  .strip i.stop {
+    background: var(--stop);
+  }
+  .strip i.maybe {
+    background: var(--maybe);
+  }
+  .strip i.no {
+    background: var(--no);
+  }
+  label.only {
+    font-size: 14px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    white-space: nowrap;
+  }
+  .status {
+    font-size: 14px;
+    color: var(--muted);
+    padding-block: 16px;
+  }
+  .status.err {
+    color: var(--maybe);
+  }
+  h2 {
+    font-weight: 800;
+    font-size: 18px;
+    margin: 28px 0 4px;
+  }
+  ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 16px;
+    align-items: center;
+    padding-block: 12px;
+    border-bottom: 1px solid var(--rule);
+  }
+  li:focus-within {
+    background: var(--panel);
+  }
+  .name {
+    font-weight: 600;
+    font-size: 17px;
+  }
+  .meta {
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .meta a {
+    color: inherit;
+  }
+  .pick {
+    display: flex;
+    gap: 6px;
+  }
+  .pick button {
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 22px;
+    border: 1.5px solid var(--rule);
+    background: var(--bg);
+    color: var(--ink);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .pick button:hover {
+    border-color: var(--muted);
+  }
+  .pick button:focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--stop) 50%, transparent);
+    outline-offset: 2px;
+  }
+  .pick button[aria-pressed='true'][data-v='stop'] {
+    background: var(--stop);
+    border-color: var(--stop);
+    color: var(--on);
+  }
+  .pick button[aria-pressed='true'][data-v='maybe'] {
+    background: var(--maybe);
+    border-color: var(--maybe);
+    color: var(--on);
+  }
+  .pick button[aria-pressed='true'][data-v='no'] {
+    background: var(--no);
+    border-color: var(--no);
+    color: var(--on);
+  }
+  .hint {
+    font-size: 14px;
+    color: var(--muted);
+    padding-block: 24px 48px;
+  }
+  @media (max-width: 600px) {
+    li {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .pick button {
+      flex: 1;
+      padding: 0 8px;
+    }
+  }
+</style>
+
+<header class="wrap">
+  <h1>Would you stop here?</h1>
+  <p class="lede">
+    Places along Mitchell, SD to Waterloo, IA, in driving order. For each one,
+    pick whether you'd pull over on a road trip. Go with your gut; the links
+    help if a name means nothing. Answers save as you go.
+  </p>
+</header>
+<div class="bar">
+  <div class="wrap">
+    <span class="count" id="count">Loading…</span>
+    <span class="tally" id="tally"></span>
+    <label class="only"
+      ><input type="checkbox" id="only" /> Unanswered only</label
+    >
+    <div class="strip" id="strip" aria-hidden="true"></div>
+  </div>
+</div>
+<main class="wrap">
+  <div class="status" id="status" hidden></div>
+  <div id="list"></div>
+  <p class="hint">
+    Keyboard: 1 would stop, 2 maybe, 3 wouldn't. Focus moves to the next place.
+  </p>
+</main>
+
+<script>
+  {
+    const LABELS = [
+      ['stop', 'Would stop'],
+      ['maybe', 'Maybe'],
+      ['no', "Wouldn't"],
+    ]
+    const esc = (s) =>
+      String(s ?? '').replace(
+        /[&<>"']/g,
+        (c) =>
+          ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;',
+          })[c],
+      )
+    const kind = (c) =>
+      String(c)
+        .split('=')
+        .pop()
+        .replace(/_/g, ' ')
+        .replace(/^\w/, (x) => x.toUpperCase())
+    const osmUrl = (id) =>
+      `https://www.openstreetmap.org/${{ n: 'node', w: 'way', r: 'relation' }[id[0]]}/${id.slice(1)}`
+
+    let places = []
+    let labels = {}
+    let db = null
+    const $ = (id) => document.getElementById(id)
+
+    function setStatus(text, err) {
+      const s = $('status')
+      s.hidden = !text
+      s.textContent = text || ''
+      s.className = err ? 'status err' : 'status'
+    }
+
+    function render() {
+      const only = $('only').checked
+      const bySeg = new Map()
+      for (const p of places) {
+        if (only && labels[p.id]) continue
+        if (!bySeg.has(p.segment)) bySeg.set(p.segment, [])
+        bySeg.get(p.segment).push(p)
+      }
+      $('list').innerHTML = [...bySeg]
+        .map(
+          ([seg, ps]) =>
+            `<h2>${esc(ps[0].stretch)}</h2><ol>${ps
+              .map((p) => {
+                const links = [
+                  p.enwiki &&
+                    `<a href="https://en.wikipedia.org/wiki/${encodeURIComponent(p.enwiki.replace(/ /g, '_'))}">Wikipedia</a>`,
+                  `<a href="https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}">Map</a>`,
+                  `<a href="${osmUrl(p.id)}">OSM</a>`,
+                  /^https:\/\//.test(p.website) &&
+                    `<a href="${esc(p.website)}">Website</a>`,
+                ].filter(Boolean)
+                return `<li data-id="${esc(p.id)}"><div><div class="name">${esc(p.name)}</div><div class="meta">${esc(kind(p.category))} · ${links.join(' · ')}</div></div><div class="pick">${LABELS.map(([v, t]) => `<button type="button" data-v="${v}" aria-pressed="${labels[p.id] === v}">${t}</button>`).join('')}</div></li>`
+              })
+              .join('')}</ol>`,
+        )
+        .join('')
+      renderBar()
+    }
+
+    function renderBar() {
+      const done = places.filter((p) => labels[p.id]).length
+      const n = (v) => places.filter((p) => labels[p.id] === v).length
+      $('count').textContent = `${done} of ${places.length} answered`
+      $('tally').textContent =
+        `${n('stop')} would stop · ${n('maybe')} maybe · ${n('no')} wouldn't`
+      $('strip').innerHTML = places
+        .map((p) => `<i class="${labels[p.id] || ''}"></i>`)
+        .join('')
+      document.querySelectorAll('li[data-id]').forEach((li) => {
+        li.querySelectorAll('button').forEach((b) =>
+          b.setAttribute(
+            'aria-pressed',
+            String(labels[li.dataset.id] === b.dataset.v),
+          ),
+        )
+      })
+    }
+
+    async function choose(li, v) {
+      const id = li.dataset.id
+      const prev = labels[id]
+      labels[id] = v
+      renderBar()
+      const next =
+        li.nextElementSibling ??
+        li.closest('ol')?.nextElementSibling?.nextElementSibling
+          ?.firstElementChild
+      next?.querySelector('button')?.focus()
+      if (!db)
+        return setStatus(
+          'Not saving: open this page signed in to Claude to keep answers.',
+          true,
+        )
+      try {
+        await db
+          .collection('labels')
+          .doc(id)
+          .set({ label: v, at: new Date().toISOString() })
+        setStatus('')
+      } catch (e) {
+        labels[id] = prev
+        renderBar()
+        setStatus(
+          `Couldn't save that answer (${e?.code || 'error'}). Try again.`,
+          true,
+        )
+      }
+    }
+
+    $('list').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-v]')
+      if (b) choose(b.closest('li'), b.dataset.v)
+    })
+    document.addEventListener('keydown', (e) => {
+      const li = document.activeElement?.closest?.('li[data-id]')
+      const v = { 1: 'stop', 2: 'maybe', 3: 'no' }[e.key]
+      if (li && v) {
+        e.preventDefault()
+        choose(li, v)
+      }
+    })
+    $('only').addEventListener('change', render)
+
+    fetch('places.json')
+      .then((r) => r.json())
+      .then((data) => {
+        places = data
+        render()
+      })
+      .catch(() => setStatus("Couldn't load the list of places.", true))
+
+    const timer = setTimeout(
+      () => setStatus('Still connecting to saved answers…'),
+      10000,
+    )
+    window.claude?.use('db').then((d) => {
+      db = d
+      if (!d) {
+        clearTimeout(timer)
+        return setStatus(
+          'Not saving: open this page signed in to Claude to keep answers.',
+          true,
+        )
+      }
+      d.collection('labels').onSnapshot(
+        (snap) => {
+          clearTimeout(timer)
+          setStatus('')
+          labels = {}
+          snap.docs.forEach((doc) => {
+            const l = doc.data()?.label
+            if (['stop', 'maybe', 'no'].includes(l)) labels[doc.id] = l
+          })
+          renderBar()
+        },
+        (e) => {
+          clearTimeout(timer)
+          setStatus(
+            `Couldn't read saved answers (${e?.code || 'error'}).`,
+            true,
+          )
+        },
+      )
+    })
+  }
+</script>
