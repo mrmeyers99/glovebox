@@ -267,7 +267,8 @@ export interface FetchOptions {
 
 /**
  * Runs the query on each server in turn until one answers, and returns its
- * elements. A server that refuses, times out, is rate-limiting (429) or
+ * elements. Each server gets an even share of the time left before the
+ * deadline. A server that refuses, times out, is rate-limiting (429) or
  * answers with a runtime error (Overpass sends those as a 200 with a
  * "remark") is skipped. Throws, listing each server's error, when none answer.
  */
@@ -282,22 +283,22 @@ export async function fetchOverpass(
   }: FetchOptions,
 ): Promise<OverpassElement[]> {
   const errors: string[] = []
-  for (const server of servers) {
+  for (const [index, server] of servers.entries()) {
     const remaining = deadline - now()
     if (remaining <= 0) {
       errors.push(`${host(server)}: out of time`)
       break
     }
     try {
-      const response = await fetchFn(server, {
-        method: 'POST',
-        headers: {
-          'user-agent': userAgent,
-          accept: 'application/json',
-          'content-type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({ data: query }),
-        signal: AbortSignal.timeout(remaining),
+      // GET, as overpass-api.de answers form POSTs from Supabase with HTTP
+      // 406. The query fits in a URL (a tile's is about 2.6 kB encoded).
+      const url = new URL(server)
+      url.searchParams.set('data', query)
+      const response = await fetchFn(url.toString(), {
+        headers: { 'user-agent': userAgent, accept: 'application/json' },
+        // An even share of the time left, so a server that hangs leaves
+        // time for the ones after it; the last one gets the rest.
+        signal: AbortSignal.timeout(remaining / (servers.length - index)),
       })
       if (!response.ok) {
         await response.body?.cancel()

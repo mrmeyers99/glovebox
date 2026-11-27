@@ -72,8 +72,8 @@ Deno.test('formatReport with no campgrounds and failed tiles', () => {
 Deno.test('runReport fetches each tile and lists those that fail', async () => {
   const log: string[] = []
   const queries: string[] = []
-  const fetchFn = ((_url: string, init?: RequestInit) => {
-    const query = (init?.body as URLSearchParams).get('data')!
+  const fetchFn = ((url: string) => {
+    const query = new URL(url).searchParams.get('data')!
     queries.push(query)
     return Promise.resolve(
       query.includes('[bbox:1,1,1.5,1.5]')

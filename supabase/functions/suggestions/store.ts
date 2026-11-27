@@ -82,3 +82,23 @@ export async function loadPlaces(
   console.error(`suggestions: stopped reading at ${MAX_PLACES} places`)
   return rows
 }
+
+/**
+ * Those of the 'done' `tiles` that still have unscored places of `kind`
+ * (public.scoring_place_tiles): the enrichment worker hasn't got to them yet.
+ */
+export async function loadScoringTiles(
+  supabase: SupabaseClient,
+  tiles: string[],
+  kind: PlaceKind,
+): Promise<Set<string>> {
+  if (tiles.length === 0) return new Set()
+  const { data, error } = await supabase.rpc('scoring_place_tiles', {
+    p_tile_keys: tiles,
+    p_kind: kind,
+  })
+  if (error) throw error
+  return new Set(
+    ((data ?? []) as { tile_key: string }[]).map((r) => r.tile_key),
+  )
+}

@@ -2,6 +2,7 @@ import { assertEquals, assertRejects } from '@std/assert'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import {
   loadPlaces,
+  loadScoringTiles,
   MAX_PLACES,
   PAGE_SIZE,
   type PlaceRow,
@@ -123,6 +124,42 @@ Deno.test('loadPlaces handles no tiles, no rows and errors', async () => {
   const failing = fakeClient(() => ({ data: null, error: new Error('nope') }))
   await assertRejects(
     () => loadPlaces(failing.client, ['0.0_0.0'], 'attraction'),
+    Error,
+    'nope',
+  )
+})
+
+Deno.test('loadScoringTiles returns the tiles still being scored', async () => {
+  const { client, calls } = fakeClient(() => ({
+    data: [{ tile_key: '42.5_-96.5' }],
+    error: null,
+  }))
+  const tiles = await loadScoringTiles(
+    client,
+    ['42.5_-96.5', '43.0_-96.5'],
+    'campground',
+  )
+  assertEquals([...tiles], ['42.5_-96.5'])
+  assertEquals(calls, [
+    {
+      fn: 'scoring_place_tiles',
+      args: { p_tile_keys: ['42.5_-96.5', '43.0_-96.5'], p_kind: 'campground' },
+    },
+  ])
+})
+
+Deno.test('loadScoringTiles handles no tiles, no rows and errors', async () => {
+  const empty = fakeClient(() => ({ data: null, error: null }))
+  assertEquals((await loadScoringTiles(empty.client, [], 'attraction')).size, 0)
+  assertEquals(empty.calls.length, 0)
+  assertEquals(
+    (await loadScoringTiles(empty.client, ['0.0_0.0'], 'attraction')).size,
+    0,
+  )
+
+  const failing = fakeClient(() => ({ data: null, error: new Error('nope') }))
+  await assertRejects(
+    () => loadScoringTiles(failing.client, ['0.0_0.0'], 'attraction'),
     Error,
     'nope',
   )

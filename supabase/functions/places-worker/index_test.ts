@@ -78,7 +78,8 @@ Deno.test('fills a due tile with its candidate places', async () => {
     requests[0].headers.get('user-agent'),
     'Glovebox/1.0 (road-trip planner; ops@example.com)',
   )
-  const query = new URLSearchParams(await requests[0].text()).get('data')!
+  assertEquals(requests[0].method, 'GET')
+  const query = new URL(requests[0].url).searchParams.get('data')!
   assertStringIncludes(query, '[bbox:43.5,-98.5,44,-98]')
 
   const places = stored.get('43.5_-98.5')!

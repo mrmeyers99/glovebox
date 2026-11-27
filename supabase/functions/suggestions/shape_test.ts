@@ -71,8 +71,25 @@ Deno.test('sorts tiles into done, pending and failed', () => {
     places: [],
     pending: [B, '0.0_0.0', '0.5_0.0'],
     failed: [FAR],
+    scoring: [],
   })
 })
+
+Deno.test(
+  'lists done tiles still being scored, with their scored places',
+  () => {
+    const result = shapeSuggestions(
+      [A, B, FAR],
+      statuses({ [A]: 'done', [B]: 'done', [FAR]: 'pending' }),
+      [row({ score: 1 })],
+      new Set([A, FAR]),
+    )
+    // FAR isn't done, so it's only pending.
+    assertEquals(result.scoring, [A])
+    assertEquals(result.pending, [FAR])
+    assertEquals(result.places.length, 1)
+  },
+)
 
 Deno.test(
   'ranks by local percentile, using neighbours only for ranking',

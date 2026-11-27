@@ -183,7 +183,7 @@ export async function runReport(
     servers = OVERPASS_SERVERS,
     userAgent,
     pauseMs = 2000,
-    tileTimeoutMs = 180_000,
+    tileTimeoutMs = 60_000,
     log = console.error,
   }: ReportOptions,
 ): Promise<string> {
