@@ -36,9 +36,14 @@ const chunks = (xs, n) =>
     xs.slice(i * n, i * n + n),
   )
 
-// 1. Candidates from OSM.
-const line = ROUTE.map(([lat, lon]) => `${lat},${lon}`).join(',')
-const around = `(around:${CORRIDOR_METERS},${line})`
+// 1. Candidates from OSM. One query per route leg, clipped to the leg's
+// bounding box: a single query over the whole route times out. A leg that
+// still times out on every server is split in half and retried.
+const OVERPASS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+]
 const filters = [
   'tourism',
   'historic',
@@ -48,12 +53,67 @@ const filters = [
   'natural~"^(waterfall|peak|cave_entrance)$"',
   'man_made=windmill',
 ]
-const query = `[out:json][timeout:180];(${filters.map((f) => `nwr[${f}]${around};`).join('')});out center tags;`
-console.error('Overpass…')
-const osm = await get('https://overpass-api.de/api/interpreter', {
-  method: 'POST',
-  body: new URLSearchParams({ data: query }),
-})
+async function overpass(query) {
+  let last
+  for (const server of OVERPASS) {
+    try {
+      const data = await get(server, {
+        method: 'POST',
+        body: new URLSearchParams({ data: query }),
+      })
+      // Overpass reports a timeout as HTTP 200 with a remark and no elements.
+      if (data?.remark) throw new Error(`${server}: ${data.remark}`)
+      return data
+    } catch (err) {
+      last = err
+      console.error(`  ${err.message}`)
+    }
+  }
+  throw last
+}
+
+const legQuery = (a, b) => {
+  const pad = CORRIDOR_METERS / 111000
+  const padLon = pad / Math.cos((a[0] * Math.PI) / 180)
+  const bbox = [
+    Math.min(a[0], b[0]) - pad,
+    Math.min(a[1], b[1]) - padLon,
+    Math.max(a[0], b[0]) + pad,
+    Math.max(a[1], b[1]) + padLon,
+  ]
+    .map((x) => x.toFixed(4))
+    .join(',')
+  const around = `(around:${CORRIDOR_METERS},${a[0]},${a[1]},${b[0]},${b[1]})`
+  return `[out:json][timeout:300][bbox:${bbox}];(${filters.map((f) => `nwr[${f}]${around};`).join('')});out center tags;`
+}
+
+async function leg(a, b, depth = 0) {
+  try {
+    return (await overpass(legQuery(a, b))).elements
+  } catch (err) {
+    if (depth >= 2) throw err
+    const mid = [
+      (a[0] + b[0]) / 2,
+      (a[1] + b[1]) / 2,
+      `${a[2]}–${b[2]} midpoint`,
+    ]
+    console.error(`  splitting ${a[2]} → ${b[2]} in half`)
+    return [
+      ...(await leg(a, mid, depth + 1)),
+      ...(await leg(mid, b, depth + 1)),
+    ]
+  }
+}
+
+const elements = new Map()
+for (let i = 1; i < ROUTE.length; i++) {
+  const [a, b] = [ROUTE[i - 1], ROUTE[i]]
+  console.error(`Overpass leg ${i}/${ROUTE.length - 1} (${a[2]} → ${b[2]})…`)
+  for (const el of await leg(a, b)) elements.set(`${el.type}${el.id}`, el)
+  await sleep(1000)
+}
+const osm = { elements: [...elements.values()] }
+if (!osm.elements.length) throw new Error('Overpass returned no candidates')
 
 let places = []
 for (const el of osm.elements) {
