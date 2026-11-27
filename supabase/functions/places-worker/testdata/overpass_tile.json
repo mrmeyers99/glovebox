@@ -1,0 +1,123 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API (test fixture, shaped like tile 43.5_-98.5)",
+  "osm3s": { "timestamp_osm_base": "2026-11-26T00:00:00Z" },
+  "elements": [
+    {
+      "type": "node",
+      "id": 101,
+      "lat": 43.7142,
+      "lon": -98.0258,
+      "tags": {
+        "name": "Corn Palace",
+        "tourism": "attraction",
+        "wikidata": "Q1135328"
+      }
+    },
+    {
+      "type": "node",
+      "id": 102,
+      "lat": 43.7,
+      "lon": -98.02,
+      "tags": {
+        "name": "Mitchell Church",
+        "historic": "building",
+        "amenity": "place_of_worship"
+      }
+    },
+    {
+      "type": "node",
+      "id": 103,
+      "lat": 43.65,
+      "lon": -98.2,
+      "tags": { "tourism": "viewpoint" }
+    },
+    {
+      "type": "node",
+      "id": 104,
+      "lat": 43.74,
+      "lon": -98.05,
+      "tags": {
+        "name": "Lake Mitchell Campground",
+        "tourism": "camp_site",
+        "tents": "yes",
+        "shower": "yes",
+        "addr:city": "Mitchell",
+        "note": "not stored"
+      }
+    },
+    {
+      "type": "node",
+      "id": 105,
+      "lat": 43.95,
+      "lon": -98.4,
+      "tags": {
+        "name": "Bad Item Museum",
+        "tourism": "museum",
+        "wikidata": "Q1;Q2"
+      }
+    },
+    {
+      "type": "way",
+      "id": 201,
+      "bounds": {
+        "minlat": 43.714,
+        "minlon": -98.026,
+        "maxlat": 43.7145,
+        "maxlon": -98.0255
+      },
+      "tags": {
+        "name": "Corn Palace",
+        "tourism": "attraction",
+        "building": "yes",
+        "website": "https://cornpalace.com"
+      }
+    },
+    {
+      "type": "way",
+      "id": 202,
+      "bounds": {
+        "minlat": 43.72,
+        "minlon": -98.08,
+        "maxlat": 43.76,
+        "maxlon": -98.02
+      },
+      "tags": {
+        "name": "Lake Mitchell Park",
+        "leisure": "park",
+        "wikidata": "Q6477924"
+      }
+    },
+    {
+      "type": "way",
+      "id": 203,
+      "bounds": {
+        "minlat": 43.9,
+        "minlon": -98.3,
+        "maxlat": 44.3,
+        "maxlon": -98.1
+      },
+      "tags": {
+        "name": "Prairie Reserve",
+        "leisure": "nature_reserve",
+        "wikidata": "Q999"
+      }
+    },
+    {
+      "type": "way",
+      "id": 204,
+      "tags": { "name": "No Bounds Fort", "historic": "fort" }
+    },
+    {
+      "type": "relation",
+      "id": 301,
+      "bounds": {
+        "minlat": 43.6,
+        "minlon": -98.45,
+        "maxlat": 43.62,
+        "maxlon": -98.43
+      },
+      "tags": { "name": "Old Fort Site", "historic": "archaeological_site" }
+    }
+  ]
+}
