@@ -28,19 +28,41 @@ import {
   type StopFormErrors,
   type StopFormInput,
 } from './addStop'
-import { droppedPin, numberedDays, placeAtPoint } from './mapAdd'
+import {
+  droppedPin,
+  formatCoordinates,
+  numberedDays,
+  placeAtPoint,
+} from './mapAdd'
 import { PlaceSearchField } from './PlaceSearchField'
+import { positionBeforeStop } from './suggestionStop'
 import type { TripAction } from './tripState'
 
 /**
  * Adding a waypoint to a day, opening an existing stop, or confirming a
  * waypoint's deletion (from its menu). A stop added at a spot picked on the
- * map (`at`) gets a day picker, starting on `dayId`.
+ * map (`at`) gets a day picker, starting on `dayId`. A suggested place
+ * (`suggestion`, at `at`) keeps its name and goes before `beforeStopId` on
+ * its default day.
  */
 export type StopDialogMode =
-  | { type: 'add'; dayId: string; dayNumber: number; at?: LatLng }
+  | {
+      type: 'add'
+      dayId: string
+      dayNumber: number
+      at?: LatLng
+      suggestion?: SuggestedStop
+    }
   | { type: 'edit'; stop: Stop; dayNumber: number }
   | { type: 'delete'; stop: Stop; dayNumber: number }
+
+/** A suggested place being added as a stop. */
+export type SuggestedStop = {
+  placeId: number
+  name: string
+  /** On the default day, the new stop goes just before this one. */
+  beforeStopId: string | null
+}
 
 type Props = {
   tripId: string
@@ -125,7 +147,15 @@ function StopForm({
   const [original] = useState(editing)
   // The spot picked on the map, if any, and its pin until it's looked up.
   const [at] = useState(() => (mode.type === 'add' ? mode.at : undefined))
-  const [pin] = useState(() => (at ? droppedPin(at) : null))
+  const [suggestion] = useState(() =>
+    mode.type === 'add' && mode.at ? mode.suggestion : undefined,
+  )
+  const [pin] = useState((): Place | null => {
+    if (!at) return null
+    return suggestion
+      ? { name: suggestion.name, address: formatCoordinates(at), ...at }
+      : droppedPin(at)
+  })
   const [chosenDayId, setDayId] = useState(() =>
     mode.type === 'add' ? mode.dayId : mode.stop.day_id,
   )
@@ -171,6 +201,11 @@ function StopForm({
         setLookingUp(false)
         if (!found || picked.current) return
         const resolved = placeAtPoint(at, found)
+        // A suggestion keeps its own name; the lookup only adds the address.
+        if (suggestion) {
+          setPlace({ ...resolved, name: suggestion.name })
+          return
+        }
         setPlace(resolved)
         setInput((prev) => ({
           ...prev,
@@ -186,7 +221,7 @@ function StopForm({
     return () => {
       active = false
     }
-  }, [at, pin])
+  }, [at, pin, suggestion])
 
   const dayStops = useMemo(
     () => stops.filter((s) => s.day_id === dayId),
@@ -211,15 +246,23 @@ function StopForm({
   }
 
   function insert(fields: StopFields) {
+    // A suggestion goes between the stops it lies between, unless the user
+    // picked another day or another place.
+    const suggested = suggestion && !picked.current ? suggestion : null
+    const onDefaultDay = mode.type === 'add' && dayId === mode.dayId
     return supabase
       .from('stops')
       .insert({
         trip_id: tripId,
         day_id: dayId,
         // Recomputed at save time so stops added meanwhile are accounted for.
-        position: newStopPosition(dayStops),
+        position:
+          suggested && onDefaultDay
+            ? positionBeforeStop(dayStops, suggested.beforeStopId)
+            : newStopPosition(dayStops),
         kind: 'waypoint',
         ...fields,
+        ...(suggested && { place_id: suggested.placeId }),
       })
       .select()
       .single()
@@ -296,9 +339,11 @@ function StopForm({
 
   const title = editing
     ? `Edit ${kindNoun(editing)} on Day ${mode.dayNumber}`
-    : at
-      ? 'Add a stop here'
-      : `Add a stop to Day ${mode.dayNumber}`
+    : suggestion
+      ? 'Add to trip'
+      : at
+        ? 'Add a stop here'
+        : `Add a stop to Day ${mode.dayNumber}`
 
   return (
     <form className="dialog-form" noValidate onSubmit={save}>
@@ -317,7 +362,9 @@ function StopForm({
         <p className="field-hint" aria-live="polite">
           {lookingUp
             ? 'Looking up this spot…'
-            : "Couldn't look up this spot; it will be saved as a dropped pin."}
+            : suggestion
+              ? "Couldn't look up the address; it will be saved with its coordinates."
+              : "Couldn't look up this spot; it will be saved as a dropped pin."}
         </p>
       )}
 

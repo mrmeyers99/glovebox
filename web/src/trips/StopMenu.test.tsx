@@ -22,6 +22,7 @@ const makeStop = (overrides: Partial<Stop> = {}): Stop => ({
   arrival_time: null,
   stay_minutes: null,
   skipped: false,
+  place_id: null,
   updated_by: null,
   created_at: '',
   updated_at: '',

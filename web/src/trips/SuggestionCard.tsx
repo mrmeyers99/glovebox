@@ -9,10 +9,16 @@ import {
 export function SuggestionCard({
   place,
   lines,
+  inTrip,
+  onAdd,
 }: {
   place: Suggestion
   /** Route lines, for the distance from the route. */
   lines: LatLng[][]
+  /** A stop was already added from this place. */
+  inTrip: boolean
+  /** Owners and editors: add the place to the trip as a stop. */
+  onAdd?: (place: Suggestion) => void
 }) {
   const { label, icon } = categoryInfo(place.category)
   const distance = routeDistanceLabel(
@@ -53,10 +59,15 @@ export function SuggestionCard({
           )}
         </p>
       )}
-      {/* TODO(#67): add the place to the trip as a stop. */}
-      <button type="button" disabled title="Coming soon">
-        Add to trip
-      </button>
+      {inTrip ? (
+        <p className="suggestion-in-trip">In your trip</p>
+      ) : (
+        onAdd && (
+          <button type="button" onClick={() => onAdd(place)}>
+            Add to trip
+          </button>
+        )
+      )}
     </article>
   )
 }

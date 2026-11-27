@@ -41,6 +41,7 @@ const stop: Stop = {
   skipped: false,
   created_at: '',
   updated_at: '2026-11-25T10:00:00+00:00',
+  place_id: null,
   updated_by: null,
 }
 

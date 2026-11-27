@@ -120,6 +120,22 @@ describe('MapPanel suggestions', () => {
     )
   })
 
+  it('passes adding a suggestion through to the map', async () => {
+    const onAddSuggestion = vi.fn()
+    render(
+      <MapPanel
+        days={[]}
+        stops={[]}
+        summary={summary}
+        selection={null}
+        onSelectStop={() => {}}
+        onAddSuggestion={onAddSuggestion}
+      />,
+    )
+    await screen.findByTestId('trip-map')
+    expect(mocks.mapProps.at(-1)?.onAddSuggestion).toBe(onAddSuggestion)
+  })
+
   it('still toggles skipped stops', async () => {
     renderPanel()
     fireEvent.click(

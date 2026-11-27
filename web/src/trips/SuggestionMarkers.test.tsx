@@ -91,6 +91,8 @@ function place(over: Partial<Suggestion> = {}): Suggestion {
   }
 }
 
+const none: ReadonlySet<number> = new Set()
+
 const lines: LatLng[][] = [
   [
     [43.7, -98.5],
@@ -112,7 +114,7 @@ describe('SuggestionMarkers', () => {
   ]
 
   it('draws a marker per place, sized by percentile', () => {
-    render(<SuggestionMarkers places={places} lines={lines} />)
+    render(<SuggestionMarkers places={places} lines={lines} inTrip={none} />)
     const top = screen.getByRole('button', {
       name: 'Corn Palace (Attraction)',
     })
@@ -124,7 +126,7 @@ describe('SuggestionMarkers', () => {
   })
 
   it('thins markers out when zoomed out, and follows the view', () => {
-    render(<SuggestionMarkers places={places} lines={lines} />)
+    render(<SuggestionMarkers places={places} lines={lines} inTrip={none} />)
     expect(screen.getAllByTestId('marker')).toHaveLength(2)
     map.zoom = 5
     act(() => map.move())
@@ -138,7 +140,7 @@ describe('SuggestionMarkers', () => {
 
   it('stops following the map when removed', () => {
     const { unmount } = render(
-      <SuggestionMarkers places={places} lines={lines} />,
+      <SuggestionMarkers places={places} lines={lines} inTrip={none} />,
     )
     expect(map.listeners.size).toBe(1)
     unmount()
@@ -147,7 +149,7 @@ describe('SuggestionMarkers', () => {
 
   it('draws every place before the map is ready', () => {
     map.present = false
-    render(<SuggestionMarkers places={places} lines={lines} />)
+    render(<SuggestionMarkers places={places} lines={lines} inTrip={none} />)
     // Zoom 0 until the map reports one: the best per tile.
     expect(screen.getAllByTestId('marker')).toHaveLength(1)
   })
@@ -156,7 +158,7 @@ describe('SuggestionMarkers', () => {
     const onMapClick = vi.fn()
     render(
       <div onClick={onMapClick}>
-        <SuggestionMarkers places={places} lines={lines} />
+        <SuggestionMarkers places={places} lines={lines} inTrip={none} />
       </div>,
     )
     const marker = screen.getByRole('button', {
@@ -171,8 +173,50 @@ describe('SuggestionMarkers', () => {
   })
 })
 
+describe('SuggestionMarkers in the trip', () => {
+  const places = [
+    place(),
+    place({ id: 2, name: 'Mitchell Museum', percentile: 0.3 }),
+  ]
+
+  it('marks places already in the trip', () => {
+    render(
+      <SuggestionMarkers places={places} lines={lines} inTrip={new Set([2])} />,
+    )
+    const marker = screen.getByRole('button', {
+      name: 'Mitchell Museum (Attraction, in your trip)',
+    })
+    expect(marker.dataset.inTrip).toBe('true')
+    expect(
+      screen.getByRole('button', { name: 'Corn Palace (Attraction)' }).dataset
+        .inTrip,
+    ).toBeUndefined()
+    fireEvent.click(marker)
+    expect(screen.getByText('In your trip')).toBeTruthy()
+  })
+
+  it('closes the card when its place is added', () => {
+    const onAdd = vi.fn()
+    render(
+      <SuggestionMarkers
+        places={places}
+        lines={lines}
+        inTrip={none}
+        onAdd={onAdd}
+      />,
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Corn Palace (Attraction)' }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Add to trip' }))
+    expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }))
+    expect(screen.queryByRole('dialog')).toBe(null)
+  })
+})
+
 describe('SuggestionCard', () => {
   it('shows the place, its photo credit, links and distance', () => {
+    const onAdd = vi.fn()
     render(
       <SuggestionCard
         place={place({
@@ -187,6 +231,8 @@ describe('SuggestionCard', () => {
           osm_url: 'https://www.openstreetmap.org/way/1',
         })}
         lines={lines}
+        inTrip={false}
+        onAdd={onAdd}
       />,
     )
     expect(screen.getByRole('heading', { name: 'Corn Palace' })).toBeTruthy()
@@ -204,8 +250,27 @@ describe('SuggestionCard', () => {
     expect(
       screen.getByRole('link', { name: 'OpenStreetMap' }).getAttribute('href'),
     ).toBe('https://www.openstreetmap.org/way/1')
-    const add = screen.getByRole('button', { name: 'Add to trip' })
-    expect((add as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Add to trip' }))
+    expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }))
+  })
+
+  it('says when the place is already in the trip', () => {
+    render(
+      <SuggestionCard
+        place={place()}
+        lines={lines}
+        inTrip={true}
+        onAdd={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('In your trip')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Add to trip' })).toBe(null)
+  })
+
+  it('offers no adding to viewers', () => {
+    render(<SuggestionCard place={place()} lines={lines} inTrip={false} />)
+    expect(screen.queryByRole('button', { name: 'Add to trip' })).toBe(null)
+    expect(screen.queryByText('In your trip')).toBe(null)
   })
 
   it('leaves out what it does not know', () => {
@@ -221,6 +286,7 @@ describe('SuggestionCard', () => {
           osm_url: 'https://www.openstreetmap.org/node/1',
         })}
         lines={[]}
+        inTrip={false}
       />,
     )
     expect(screen.getByRole('link', { name: 'Photo' })).toBeTruthy()
@@ -230,7 +296,7 @@ describe('SuggestionCard', () => {
 
   it('has no links section without links', () => {
     const { container } = render(
-      <SuggestionCard place={place()} lines={lines} />,
+      <SuggestionCard place={place()} lines={lines} inTrip={false} />,
     )
     expect(container.querySelector('.suggestion-links')).toBe(null)
     expect(container.querySelector('img')).toBe(null)

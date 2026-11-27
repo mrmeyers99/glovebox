@@ -3,6 +3,7 @@ import type { RefObject } from 'react'
 import { legLines } from '../lib/corridor'
 import type { Day, Stop } from '../lib/database.types'
 import type { LatLng } from '../lib/geocode'
+import type { Suggestion } from '../lib/suggestions'
 import type { TripSummary } from '../lib/tripMath'
 import type { StopSelection } from './mapView'
 import { useSuggestions, type SuggestionsState } from './useSuggestions'
@@ -17,6 +18,7 @@ export function MapPanel({
   selection,
   onSelectStop,
   onAddStopAt,
+  onAddSuggestion,
 }: {
   days: readonly Day[]
   stops: readonly Stop[]
@@ -26,6 +28,8 @@ export function MapPanel({
   onSelectStop: (stopId: string) => void
   /** Owners and editors: add a stop where the map is right-clicked / long-pressed. */
   onAddStopAt?: (point: LatLng) => void
+  /** Owners and editors: add a suggested place as a stop. */
+  onAddSuggestion?: (place: Suggestion) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const hasSize = useHasSize(ref)
@@ -49,6 +53,7 @@ export function MapPanel({
             selection={selection}
             onSelectStop={onSelectStop}
             onAddStopAt={onAddStopAt}
+            onAddSuggestion={onAddSuggestion}
             suggestions={suggestions.places}
             corridor={lines}
           />

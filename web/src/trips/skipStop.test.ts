@@ -19,6 +19,7 @@ const stop: Stop = {
   arrival_time: null,
   stay_minutes: null,
   skipped: false,
+  place_id: null,
   updated_by: null,
   created_at: '',
   updated_at: '2026-11-25T00:00:00Z',
