@@ -88,7 +88,8 @@ Deno.test('runReport fetches each tile and lists those that fail', async () => {
     pauseMs: 1,
     log: (line) => log.push(line),
   })
-  assertEquals(queries.length, 2)
+  // The failing tile is tried once more at the end.
+  assertEquals(queries.length, 3)
   assertStringIncludes(
     report,
     '**3 campgrounds** in 1 tiles (1 tiles failed: 1.0_1.0)',

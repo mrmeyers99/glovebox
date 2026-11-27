@@ -172,6 +172,8 @@ export interface ReportOptions {
   pauseMs?: number
   /** Per tile, across servers. */
   tileTimeoutMs?: number
+  /** Passes over the tiles that failed: public Overpass is often busy. */
+  retries?: number
   log?: (line: string) => void
 }
 
@@ -184,13 +186,30 @@ export async function runReport(
     userAgent,
     pauseMs = 2000,
     tileTimeoutMs = 60_000,
+    retries = 1,
     log = console.error,
   }: ReportOptions,
 ): Promise<string> {
   const campgrounds: ReportCampground[] = []
-  const failed: string[] = []
-  for (const [i, tile] of tiles.entries()) {
-    if (i > 0 && pauseMs > 0) await new Promise((r) => setTimeout(r, pauseMs))
+  let failed: string[] = []
+  let todo = [...tiles]
+  for (let pass = 0; pass <= retries && todo.length > 0; pass++) {
+    failed = []
+    for (const [i, tile] of todo.entries()) {
+      if ((pass > 0 || i > 0) && pauseMs > 0) {
+        await new Promise((r) => setTimeout(r, pauseMs))
+      }
+      if (await reportTile(tile)) continue
+      failed.push(tile)
+    }
+    todo = failed
+  }
+  return formatReport(campgrounds, {
+    done: tiles.length - failed.length,
+    failed,
+  })
+
+  async function reportTile(tile: string): Promise<boolean> {
     try {
       const elements = await fetchOverpass(buildQuery(tileBounds(tile)), {
         fetchFn,
@@ -201,18 +220,21 @@ export async function runReport(
       const found = tileCampgrounds(elements, tile)
       campgrounds.push(...found)
       log(`${tile}: ${found.length} campgrounds (${elements.length} elements)`)
+      return true
     } catch (error) {
-      failed.push(tile)
       log(`${tile}: failed: ${error instanceof Error ? error.message : error}`)
+      return false
     }
   }
-  return formatReport(campgrounds, {
-    done: tiles.length - failed.length,
-    failed,
-  })
 }
 
 if (import.meta.main) {
   const tiles = Deno.args.length ? Deno.args : TEST_CORRIDOR
-  console.log(await runReport(tiles, { userAgent: contactUserAgent() }))
+  const timeout = Number(Deno.env.get('REPORT_TILE_TIMEOUT_MS'))
+  console.log(
+    await runReport(tiles, {
+      userAgent: contactUserAgent(),
+      tileTimeoutMs: timeout > 0 ? timeout : undefined,
+    }),
+  )
 }
