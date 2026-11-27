@@ -3,15 +3,18 @@
 // that aren't cached yet are queued for the fill workers.
 //
 //   { tiles: string[] (at most MAX_TILES), kind: 'attraction' | 'campground' }
-//   → { places: Suggestion[], pending: string[], failed: string[] }
+//   → { places: Suggestion[], pending: string[], failed: string[],
+//       scoring: string[] }
 //
 // Tiles never asked for before are queued as 'pending' (once, even when many
 // users ask at the same time). Existing tiles are left alone, so a 'done' tile
 // is never downgraded: the fill worker refreshes old 'done' tiles itself, and
 // they keep answering meanwhile. Places come from 'done' tiles only, ranked by
 // local percentile among the places in each tile and its neighbours; child
-// places whose parent is also suggested are left out. The client asks again
-// for `pending` tiles later.
+// places whose parent is also suggested are left out. Done tiles whose places
+// aren't all scored yet are listed in `scoring` (their scored places are
+// still returned). The client asks again for `pending` and `scoring` tiles
+// later.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { adminClient } from '../_shared/admin.ts'
 import { requireUser } from '../_shared/auth.ts'
@@ -21,6 +24,7 @@ import { parseSuggestionsRequest } from './request.ts'
 import { rankingTiles, shapeSuggestions } from './shape.ts'
 import {
   loadPlaces,
+  loadScoringTiles,
   type PlaceRow,
   queueTiles,
   type TileStatus,
@@ -33,11 +37,17 @@ export interface Deps {
     tiles: string[],
     kind: PlaceKind,
   ) => Promise<PlaceRow[]>
+  scoring?: (
+    supabase: SupabaseClient,
+    tiles: string[],
+    kind: PlaceKind,
+  ) => Promise<Set<string>>
 }
 
 export function createHandler({
   queue = (tiles) => queueTiles(adminClient(), tiles),
   load = loadPlaces,
+  scoring = loadScoringTiles,
 }: Deps = {}) {
   return handle(async (req) => {
     const { supabase } = await requireUser(req)
@@ -54,12 +64,16 @@ export function createHandler({
 
     const statuses = await queue(tiles)
     const done = tiles.filter((tile) => statuses.get(tile) === 'done')
-    const rows = await load(supabase, rankingTiles(done), kind)
-    const response = shapeSuggestions(tiles, statuses, rows)
+    const [rows, scoringTiles] = await Promise.all([
+      load(supabase, rankingTiles(done), kind),
+      scoring(supabase, done, kind),
+    ])
+    const response = shapeSuggestions(tiles, statuses, rows, scoringTiles)
 
     console.log(
       `suggestions: ${tiles.length} ${kind} tiles, ${done.length} done, ` +
         `${response.pending.length} pending, ${response.failed.length} failed, ` +
+        `${response.scoring.length} scoring, ` +
         `${response.places.length} places`,
     )
     return json(response)

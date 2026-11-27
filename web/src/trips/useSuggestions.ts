@@ -1,9 +1,10 @@
 // Suggested places along the trip's route while the map's Suggestions toggle
 // is on. Asks the `suggestions` function for the corridor's tiles, then asks
-// again every SUGGESTIONS_POLL_MS for tiles that are still being filled, until
-// none are left. Tiles that failed (on the server, or our request) aren't
-// asked for again until the toggle is turned off and on; the fill worker
-// retries failed tiles itself. Tiles already answered aren't asked for again,
+// again every SUGGESTIONS_POLL_MS for tiles that are still being filled, or
+// whose places are still being scored, until none are left. Tiles the fill
+// worker couldn't fetch (it retries them itself) are asked about again along
+// with those; tiles our own request failed for, only when the toggle is
+// turned off and on. Tiles already answered aren't asked for again,
 // so editing the route only fetches the tiles it newly passes through.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -32,7 +33,8 @@ export interface SuggestionsState {
 }
 
 type TileState =
-  | { status: 'done'; places: Suggestion[] }
+  /** 'scoring': filled, but more places may come as they're scored. */
+  | { status: 'done' | 'scoring'; places: Suggestion[] }
   /** 'error': our request failed, rather than the server's fill. */
   | { status: 'pending' | 'failed' | 'error' }
 
@@ -74,10 +76,21 @@ export function useSuggestions(
     }
 
     const ask = (delay: number, retryFailed: boolean) => {
+      const statusOf = (key: string) => tilesRef.current.get(key)?.status
+      const waiting = wanted.some((key) => {
+        const status = statusOf(key)
+        return (
+          status === undefined || status === 'pending' || status === 'scoring'
+        )
+      })
+      if (!waiting && !retryFailed) return
+      // The fill worker retries failed tiles itself, so they're asked about
+      // again along with the tiles still coming; tiles our own request
+      // failed for, only when the toggle is turned on again.
       const toAsk = wanted.filter((key) => {
-        const status = tilesRef.current.get(key)?.status
-        if (status === undefined || status === 'pending') return true
-        return retryFailed && status !== 'done'
+        const status = statusOf(key)
+        if (status === 'done') return false
+        return status !== 'error' || retryFailed
       })
       if (toAsk.length === 0) return
       timer = setTimeout(() => {
@@ -86,15 +99,19 @@ export function useSuggestions(
             if (cancelled) return
             const pending = new Set(result.pending)
             const failed = new Set(result.failed)
+            const scoring = new Set(result.scoring)
             const next = new Map(tilesRef.current)
             for (const key of toAsk) {
               if (pending.has(key)) next.set(key, { status: 'pending' })
               else if (failed.has(key)) next.set(key, { status: 'failed' })
+              else if (scoring.has(key))
+                next.set(key, { status: 'scoring', places: [] })
               else next.set(key, { status: 'done', places: [] })
             }
             for (const place of result.places) {
               const tile = next.get(place.tile_key)
-              if (tile?.status === 'done') tile.places.push(place)
+              if (tile?.status === 'done' || tile?.status === 'scoring')
+                tile.places.push(place)
             }
             update(next)
             ask(SUGGESTIONS_POLL_MS, false)
@@ -126,7 +143,10 @@ export function useSuggestions(
     for (const key of tilesKey.split(' ')) {
       const tile = tiles.get(key)
       if (tile?.status === 'done') places.push(...tile.places)
-      else if (tile?.status === 'failed') failed++
+      else if (tile?.status === 'scoring') {
+        places.push(...tile.places)
+        pending++
+      } else if (tile?.status === 'failed') failed++
       else if (tile?.status === 'error') error = true
       else pending++
     }

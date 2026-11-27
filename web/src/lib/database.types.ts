@@ -259,6 +259,11 @@ export type Database = {
           | 'parent_place_id'
         > & { lat: number; lng: number; score: number })[]
       }
+      // Done tiles that still have unscored places of a kind.
+      scoring_place_tiles: {
+        Args: { p_tile_keys: string[]; p_kind: PlaceKind }
+        Returns: Pick<PlaceTile, 'tile_key'>[]
+      }
       // Service role only: queues missing tiles, returns every tile's status.
       queue_place_tiles: {
         Args: { p_tile_keys: string[] }
