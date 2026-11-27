@@ -1,5 +1,5 @@
-// Suggested places on the trip map: a marker per place (an icon for its
-// category, larger for the best in each area) and a card for the one
+// Suggested places on the trip map: a marker per place (its photo, or an icon
+// for its category, larger for the best in each area) and a card for the one
 // clicked. Part of the lazily loaded map chunk.
 
 import { memo, useEffect, useMemo, useState } from 'react'
@@ -119,6 +119,10 @@ const SuggestionPin = memo(function SuggestionPin({
 }) {
   const { label, icon } = categoryInfo(place.category)
   const tier = markerTier(place.percentile)
+  const photo = place.image?.marker_url ?? null
+  // The photo that didn't load, so a new one for the place is tried again.
+  const [failed, setFailed] = useState<string | null>(null)
+  const showPhoto = photo !== null && photo !== failed
   return (
     <Marker
       longitude={place.lng}
@@ -137,11 +141,23 @@ const SuggestionPin = memo(function SuggestionPin({
         className="suggestion-marker"
         data-tier={tier}
         data-in-trip={inTrip || undefined}
+        data-photo={showPhoto || undefined}
         aria-pressed={selected}
         aria-label={`${place.name} (${inTrip ? `${label}, in your trip` : label})`}
         title={place.name}
       >
-        <span aria-hidden="true">{icon}</span>
+        {showPhoto ? (
+          <img
+            src={photo}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            draggable={false}
+            onError={() => setFailed(photo)}
+          />
+        ) : (
+          <span aria-hidden="true">{icon}</span>
+        )}
       </button>
     </Marker>
   )

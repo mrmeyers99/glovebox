@@ -184,6 +184,8 @@ Deno.test('shapes each place for the client', () => {
     image: {
       thumbnail_url:
         'https://commons.wikimedia.org/wiki/Special:FilePath/Corn_Palace_(2019).jpg?width=320',
+      marker_url:
+        'https://commons.wikimedia.org/wiki/Special:FilePath/Corn_Palace_(2019).jpg?width=120',
       page_url:
         'https://commons.wikimedia.org/wiki/File:Corn_Palace_(2019).jpg',
       credit: 'Jane Doe',

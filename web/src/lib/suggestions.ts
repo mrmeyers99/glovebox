@@ -12,6 +12,8 @@ export type SuggestionKind = 'attraction' | 'campground'
 
 export interface SuggestionImage {
   thumbnail_url: string
+  /** A small copy for the map marker; null from a function that predates it. */
+  marker_url: string | null
   /** The file's Commons page, where its author and licence are given in full. */
   page_url: string
   credit: string | null
@@ -66,6 +68,7 @@ function parseImage(value: unknown): SuggestionImage | null {
   if (!thumbnail || !page) return null
   return {
     thumbnail_url: thumbnail,
+    marker_url: optionalString(value.marker_url),
     page_url: page,
     credit: optionalString(value.credit),
     license: optionalString(value.license),

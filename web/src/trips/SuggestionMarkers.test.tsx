@@ -173,6 +173,83 @@ describe('SuggestionMarkers', () => {
   })
 })
 
+describe('SuggestionMarkers photos', () => {
+  const image = {
+    thumbnail_url: 'https://commons.wikimedia.org/big.jpg',
+    marker_url: 'https://commons.wikimedia.org/small.jpg',
+    page_url: 'https://commons.wikimedia.org/wiki/File:Corn.jpg',
+    credit: null,
+    license: null,
+  }
+  const marker = (name = 'Corn Palace (Attraction)') =>
+    screen.getByRole('button', { name })
+
+  it("shows the place's small photo instead of the icon", () => {
+    render(
+      <SuggestionMarkers
+        places={[place({ image })]}
+        lines={lines}
+        inTrip={new Set([1])}
+      />,
+    )
+    const button = marker('Corn Palace (Attraction, in your trip)')
+    const img = button.querySelector('img')
+    expect(img?.getAttribute('src')).toBe(image.marker_url)
+    expect(img?.getAttribute('alt')).toBe('')
+    expect(img?.getAttribute('loading')).toBe('lazy')
+    expect(img?.getAttribute('decoding')).toBe('async')
+    expect(button.dataset.photo).toBe('true')
+    expect(button.dataset.inTrip).toBe('true')
+    expect(button.textContent).toBe('')
+  })
+
+  it('shows the icon when the place has no photo', () => {
+    render(
+      <SuggestionMarkers
+        places={[
+          place(),
+          place({ id: 2, name: 'B', image: { ...image, marker_url: null } }),
+        ]}
+        lines={lines}
+        inTrip={none}
+      />,
+    )
+    for (const button of [marker(), marker('B (Attraction)')]) {
+      expect(button.querySelector('img')).toBe(null)
+      expect(button.dataset.photo).toBeUndefined()
+      expect(button.textContent).toBe('⭐')
+    }
+  })
+
+  it("falls back to the icon when the photo doesn't load, and tries a new one", () => {
+    const { rerender } = render(
+      <SuggestionMarkers
+        places={[place({ image })]}
+        lines={lines}
+        inTrip={none}
+      />,
+    )
+    fireEvent.error(marker().querySelector('img')!)
+    expect(marker().querySelector('img')).toBe(null)
+    expect(marker().dataset.photo).toBeUndefined()
+    expect(marker().textContent).toBe('⭐')
+    const other = {
+      ...image,
+      marker_url: 'https://commons.wikimedia.org/new.jpg',
+    }
+    rerender(
+      <SuggestionMarkers
+        places={[place({ image: other })]}
+        lines={lines}
+        inTrip={none}
+      />,
+    )
+    expect(marker().querySelector('img')?.getAttribute('src')).toBe(
+      other.marker_url,
+    )
+  })
+})
+
 describe('SuggestionMarkers in the trip', () => {
   const places = [
     place(),
@@ -223,6 +300,7 @@ describe('SuggestionCard', () => {
           lat: 44,
           image: {
             thumbnail_url: 'https://commons.wikimedia.org/thumb.jpg',
+            marker_url: null,
             page_url: 'https://commons.wikimedia.org/wiki/File:Corn.jpg',
             credit: 'Jane Doe',
             license: 'CC BY-SA 4.0',
@@ -279,6 +357,7 @@ describe('SuggestionCard', () => {
         place={place({
           image: {
             thumbnail_url: 'https://t',
+            marker_url: null,
             page_url: 'https://p',
             credit: null,
             license: null,
