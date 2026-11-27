@@ -1,6 +1,10 @@
 // Turning cached places into the suggestions response. Pure logic, no I/O.
 import {
+  amenityCompleteness,
+  type CampgroundAmenities,
+  campgroundScore,
   localPercentile,
+  parseAmenities,
   type PlaceKind,
   tileNeighbourhood,
 } from '../_shared/places/mod.ts'
@@ -9,33 +13,14 @@ import type { PlaceRow, TileStatus } from './store.ts'
 /** Width of the Commons thumbnail, in pixels. */
 export const THUMBNAIL_WIDTH = 320
 
+export type { CampgroundAmenities }
+
 export interface PlaceImage {
   thumbnail_url: string
   /** The file's Commons page, where its author and licence are given in full. */
   page_url: string
   credit: string | null
   license: string | null
-}
-
-/**
- * What a campground offers, from its OSM tags. null means not known (the tag
- * isn't set).
- */
-export interface CampgroundAmenities {
-  tents: boolean | null
-  /** Caravans or motorhomes allowed. */
-  rvs: boolean | null
-  /** Electric hookups (power_supply). */
-  hookups: boolean | null
-  showers: boolean | null
-  toilets: boolean | null
-  drinking_water: boolean | null
-  fee: boolean | null
-  /** OSM reservation=*: 'required', 'recommended', 'yes', 'no'... */
-  reservation: string | null
-  /** Number of pitches. */
-  capacity: number | null
-  website: string | null
 }
 
 export interface Suggestion {
@@ -123,7 +108,7 @@ export function shapeSuggestions(
       ),
   )
   const percentiles = localPercentile(pool, (row) => row.tile_key, {
-    score: (row) => row.score,
+    score: placeScore,
     neighbours: tileNeighbourhood,
   })
 
@@ -147,13 +132,29 @@ function toSuggestion(row: PlaceRow, percentile: number): Suggestion {
     lat: row.lat,
     lng: row.lng,
     tile_key: row.tile_key,
-    score: Number(row.score),
+    score: placeScore(row),
     percentile,
     image: placeImage(row),
-    wikipedia_url: wikipediaUrl(tags.wikipedia, row.wikidata),
+    wikipedia_url: wikipediaUrl(
+      typeof tags.wikipedia === 'string' ? tags.wikipedia : undefined,
+      row.wikidata,
+    ),
     osm_url: osmUrl(row),
     amenities: row.kind === 'campground' ? amenities(row.category, tags) : null,
   }
+}
+
+/**
+ * A place's score: as stored, except a campground's, which builds on its
+ * park's (campgroundScore) since campgrounds aren't famous themselves.
+ */
+export function placeScore(row: PlaceRow): number {
+  const own = Number(row.score)
+  if (row.kind !== 'campground') return own
+  const completeness = amenityCompleteness(
+    amenities(row.category, row.tags ?? {}),
+  )
+  return campgroundScore(own, row.parent_score, completeness)
 }
 
 /** A Commons file name as it appears in a URL path. */
@@ -198,32 +199,21 @@ export function osmUrl(row: Pick<PlaceRow, 'source' | 'source_id'>) {
   return `https://www.openstreetmap.org/${row.source_id}`
 }
 
-/** An OSM yes/no-style tag: null if unset; false for no; true otherwise. */
-function yesNo(value: string | undefined): boolean | null {
-  const v = value?.trim().toLowerCase()
-  if (!v) return null
-  return !['no', 'none', 'false', '0'].includes(v)
-}
-
+/**
+ * A campground's amenities: those the fill worker stored (tags.amenities),
+ * or else read from its raw tags (places stored before it did).
+ */
 export function amenities(
   category: string,
-  tags: Readonly<Record<string, string | undefined>>,
+  tags: Readonly<Record<string, unknown>>,
 ): CampgroundAmenities {
-  const capacity = Number(tags.capacity)
-  const website = tags.website ?? tags['contact:website']
-  return {
-    tents: yesNo(tags.tents),
-    rvs:
-      yesNo(tags.caravans) ??
-      yesNo(tags.motorhome) ??
-      (category === 'tourism=caravan_site' ? true : null),
-    hookups: yesNo(tags.power_supply),
-    showers: yesNo(tags.shower),
-    toilets: yesNo(tags.toilets),
-    drinking_water: yesNo(tags.drinking_water),
-    fee: yesNo(tags.fee),
-    reservation: tags.reservation?.trim() || null,
-    capacity: Number.isInteger(capacity) && capacity > 0 ? capacity : null,
-    website: website && /^https?:\/\//i.test(website) ? website : null,
+  const stored = tags.amenities
+  if (typeof stored === 'object' && stored !== null && !Array.isArray(stored)) {
+    return { ...parseAmenities(category, {}), ...stored }
   }
+  const raw: Record<string, string> = {}
+  for (const [key, value] of Object.entries(tags)) {
+    if (typeof value === 'string') raw[key] = value
+  }
+  return parseAmenities(category, raw)
 }

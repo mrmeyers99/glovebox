@@ -19,12 +19,15 @@ export interface PlaceRow {
   lat: number
   lng: number
   tile_key: string
-  tags: Record<string, string> | null
+  /** OSM tags; a campground's also hold `amenities` (CampgroundAmenities). */
+  tags: Record<string, unknown> | null
   image_file: string | null
   image_credit: string | null
   image_license: string | null
   score: number
   parent_place_id: number | null
+  /** The parent place's score (null if none, or not scored yet). */
+  parent_score: number | null
 }
 
 /** Rows per page: the API's max_rows (supabase/config.jsonc). */

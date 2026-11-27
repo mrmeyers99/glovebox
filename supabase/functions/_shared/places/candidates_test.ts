@@ -205,6 +205,14 @@ Deno.test('needs a name', () => {
   )
 })
 
+Deno.test('campgrounds need no name (they are named after their park)', () => {
+  assertEquals(classifyCandidate({ tourism: 'camp_site' }), {
+    kind: 'campground',
+    category: 'tourism=camp_site',
+  })
+  assertEquals(isCandidate({ tourism: 'caravan_site', name: ' ' }), true)
+})
+
 Deno.test('everything else is not a candidate', () => {
   assertEquals(
     isCandidate(named({ amenity: 'university', wikidata: 'Q1' })),

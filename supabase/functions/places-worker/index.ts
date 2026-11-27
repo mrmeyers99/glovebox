@@ -17,7 +17,8 @@
 import { requireServiceRole } from '../_shared/auth.ts'
 import { handle, HttpError, json } from '../_shared/http.ts'
 import { contactUserAgent } from '../_shared/user_agent.ts'
-import { dedupe } from '../_shared/places/mod.ts'
+import { dedupe, parseAmenities } from '../_shared/places/mod.ts'
+import { finishCampgrounds, parseParks } from './campgrounds.ts'
 import {
   buildQuery,
   fetchOverpass,
@@ -128,14 +129,19 @@ export async function fillTile(
 
 /**
  * The tile's places: candidates merged and nested across everything Overpass
- * returned (which includes ways reaching in from neighbouring tiles), then
- * only those located in this tile, since each place is stored by its tile.
+ * returned (which includes ways reaching in from neighbouring tiles), with
+ * campgrounds named and linked to their parks, then only those located in
+ * this tile, since each place is stored by its tile. A campground's tags
+ * also hold its normalised amenities (tags.amenities).
  */
 export function placesForTile(
   elements: Parameters<typeof parseElements>[0],
   bounds: ReturnType<typeof tileBounds>,
 ): StoredPlace[] {
-  return dedupe(parseElements(elements))
+  return finishCampgrounds(
+    dedupe(parseElements(elements)),
+    parseParks(elements),
+  )
     .filter((p) => inTile(bounds, p.lat, p.lng))
     .map((p) => ({
       source_id: p.id,
@@ -145,7 +151,10 @@ export function placesForTile(
       lat: p.lat,
       lng: p.lng,
       wikidata: p.wikidata ?? null,
-      tags: p.tags,
+      tags:
+        p.kind === 'campground'
+          ? { ...p.tags, amenities: parseAmenities(p.category, p.tags) }
+          : p.tags,
       parent_source_id: p.parentId,
     }))
 }

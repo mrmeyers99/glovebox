@@ -1,6 +1,10 @@
 import { invokeRequest, userToken } from '../_shared/test_env.ts'
 import { assertEquals, assertStringIncludes } from '@std/assert'
 import {
+  type CampgroundAmenities,
+  parseAmenities,
+} from '../_shared/places/mod.ts'
+import {
   createHandler,
   type Deps,
   MAX_TILES_PER_RUN,
@@ -66,7 +70,7 @@ Deno.test('fills a due tile with its candidate places', async () => {
   const res = await run({ store, fetchFn })
   assertEquals(res.status, 200)
   assertEquals(await res.json(), {
-    tiles: [{ tile_key: '43.5_-98.5', status: 'done', places: 5 }],
+    tiles: [{ tile_key: '43.5_-98.5', status: 'done', places: 7 }],
   })
 
   assertEquals(requests.length, 1)
@@ -80,10 +84,20 @@ Deno.test('fills a due tile with its candidate places', async () => {
 
   const places = stored.get('43.5_-98.5')!
   // The Corn Palace node and building are one place; the reserve centred in
-  // the next tile north is left to that tile.
+  // the next tile north is left to that tile; the unnamed campground next to
+  // Lake Mitchell Campground is the same campground; Firesteel Park has no
+  // Wikidata item, so it is only used to name the campground in it.
   assertEquals(
     places.map((p) => p.source_id),
-    ['node/101', 'node/104', 'node/105', 'way/202', 'relation/301'],
+    [
+      'node/101',
+      'node/104',
+      'node/105',
+      'node/106',
+      'node/108',
+      'way/202',
+      'relation/301',
+    ],
   )
   const cornPalace = places[0]
   assertEquals(cornPalace.wikidata, 'Q1135328')
@@ -91,6 +105,18 @@ Deno.test('fills a due tile with its candidate places', async () => {
   const camp = places.find((p) => p.source_id === 'node/104')!
   assertEquals(camp.kind, 'campground')
   assertEquals(camp.parent_source_id, 'way/202')
+  assertEquals(camp.tags.amenities, {
+    ...parseAmenities('tourism=camp_site', {}),
+    tents: true,
+    showers: true,
+  })
+  const inPark = places.find((p) => p.source_id === 'node/106')!
+  assertEquals(inPark.name, 'Campground at Firesteel Park')
+  assertEquals(inPark.parent_source_id, null)
+  assertEquals((inPark.tags.amenities as CampgroundAmenities).toilets, true)
+  const alone = places.find((p) => p.source_id === 'node/108')!
+  assertEquals([alone.name, alone.kind], ['Campground', 'campground'])
+  assertEquals(cornPalace.tags.amenities, undefined)
   assertEquals(
     places.find((p) => p.source_id === 'way/202')!.parent_source_id,
     null,

@@ -555,6 +555,12 @@ begin
 end $$;
 -- A scored place in a tile that isn't done yet isn't suggested.
 update public.places set score = 1 where source_id = 'node/2';
+-- A campground comes with its parent's score (campgrounds are ranked by their park).
+insert into public.places (source, source_id, name, kind, category, location, tags, score, parent_place_id)
+  select 'osm', 'node/4', 'Campground at Corn Palace', 'campground', 'tourism=camp_site',
+    extensions.st_point(-98.03, 43.715, 4326)::extensions.geography,
+    '{"amenities": {"tents": true}}', 0.1, id
+  from public.places where source_id = 'way/1';
 reset role;
 
 do $$ begin perform pg_temp.act_as('dave'); end $$;
@@ -567,8 +573,12 @@ begin
       and abs(v_row.lat - 43.714) < 1e-9 and abs(v_row.lng - -98.0298) < 1e-9
       and v_row.tile_key = '43.5_-98.5' and v_row.tags ->> 'website' = 'https://cornpalace.com',
     'suggestion_places returns scored places in done tiles, with lat/lng';
-  assert (select count(*) from public.suggestion_places(array['43.5_-98.5'], 'campground')) = 0,
-    'suggestion_places filters by kind';
+  assert v_row.parent_score is null, 'a place without a parent has no parent_score';
+  select * into strict v_row
+    from public.suggestion_places(array['43.5_-98.5'], 'campground');
+  assert v_row.name = 'Campground at Corn Palace' and v_row.score = 0.1
+      and v_row.parent_score = 5.1 and (v_row.tags -> 'amenities' ->> 'tents')::boolean,
+    'suggestion_places filters by kind and returns the parent''s score';
   assert not exists (select 1
       from public.scoring_place_tiles(array['43.5_-98.5', '42.0_-92.5'], 'attraction')),
     'scoring_place_tiles: a done tile with every place scored, and a tile not done, are not scoring';

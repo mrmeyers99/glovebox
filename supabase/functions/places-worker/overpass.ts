@@ -14,6 +14,7 @@ import {
 } from '../_shared/places/mod.ts'
 import type { DedupePlace, LatLngTuple } from '../_shared/places/dedupe.ts'
 import type { TileBounds } from './tiles.ts'
+import { PARK_RADIUS_M } from './campgrounds.ts'
 
 /** Public Overpass instances, tried in this order. */
 export const OVERPASS_SERVERS = [
@@ -36,6 +37,10 @@ export const STORED_TAGS: ReadonlySet<string> = new Set([
   'backcountry',
   'boundary',
   'capacity',
+  'capacity:caravans',
+  'capacity:motorhomes',
+  'capacity:pitches',
+  'capacity:tents',
   'caravans',
   'charge',
   'contact:phone',
@@ -54,6 +59,7 @@ export const STORED_TAGS: ReadonlySet<string> = new Set([
   'natural',
   'opening_hours',
   'operator',
+  'operator:type',
   'phone',
   'power_supply',
   'protect_class',
@@ -65,6 +71,7 @@ export const STORED_TAGS: ReadonlySet<string> = new Set([
   'toilets',
   'tourism',
   'url',
+  'water_point',
   'waterway',
   'website',
   'wheelchair',
@@ -75,16 +82,21 @@ export const STORED_TAGS: ReadonlySet<string> = new Set([
 
 /**
  * The Overpass QL query for one tile: every named element that
- * classifyCandidate() could accept (see candidates.ts), with tags, and
- * coordinates for nodes or a bounding box for ways and relations.
+ * classifyCandidate() could accept (see candidates.ts), and every campground,
+ * named or not, with tags, and coordinates for nodes or a bounding box for
+ * ways and relations.
+ *
+ * It also returns the outlines of the parks and protected areas that contain
+ * a campground or are within PARK_RADIUS_M of one (campgrounds.ts links each
+ * campground to its park), whether or not they are candidates themselves.
  * The worker still runs classifyCandidate() on each element, since a query
  * can't express its exclusions.
  */
 export function buildQuery(bounds: TileBounds): string {
   const { south, west, north, east } = bounds
   const any = (values: Iterable<string>) => `~"^(${[...values].join('|')})$"`
-  const selectors = [
-    `["tourism"${any([...TOURISM_ATTRACTIONS, ...TOURISM_CAMPGROUNDS])}]`,
+  const named = [
+    `["tourism"${any(TOURISM_ATTRACTIONS)}]`,
     `["tourism"="artwork"]["artwork_type"${any(ARTWORK_TYPES)}]`,
     `["historic"${any([...HISTORIC_SITES, 'windmill'])}]`,
     `["historic"="memorial"]["memorial"${any(MEMORIAL_STATUES)}]`,
@@ -94,17 +106,41 @@ export function buildQuery(bounds: TileBounds): string {
     `["man_made"="windmill"]`,
     ...PARKS.map(([key, value]) => `["${key}"="${value}"]["wikidata"]`),
   ]
+  // Parks by key: ["leisure"~"^(nature_reserve|park)$"], ["boundary"~…].
+  const parkKeys = new Map<string, string[]>()
+  for (const [key, value] of PARKS) {
+    parkKeys.set(key, [...(parkKeys.get(key) ?? []), value])
+  }
+  const parkFilters = [...parkKeys].map(
+    ([key, values]) => `["${key}"${any(values)}]`,
+  )
+  const parkSources = ['pivot.campAreas', `around.camps:${PARK_RADIUS_M}`]
   return [
     `[out:json][timeout:${QUERY_TIMEOUT_S}][bbox:${south},${west},${north},${east}];`,
+    `nwr["tourism"${any(TOURISM_CAMPGROUNDS)}]->.camps;`,
     '(',
-    ...selectors.map((s) => `  nwr${s}["name"];`),
+    ...named.map((s) => `  nwr${s}["name"];`),
+    '  .camps;',
     ')->.found;',
-    // Nodes with their coordinates; ways and relations with a bounding box
-    // instead of every member, which keeps big parks small.
+    // The areas each campground's points are in, then the parks among them
+    // and those near a campground, with their outlines.
+    '(node.camps; node(w.camps); way(r.camps); node(w);)->.campNodes;',
+    '.campNodes is_in->.campAreas;',
+    '(',
+    ...parkSources.flatMap((source) =>
+      ['way', 'relation'].flatMap((type) =>
+        parkFilters.map((filter) => `  ${type}(${source})${filter};`),
+      ),
+    ),
+    ')->.parks;',
+    // Nodes with their coordinates; other ways and relations with a bounding
+    // box instead of every member, which keeps big areas small.
     'node.found;',
     'out body qt;',
-    '(way.found; relation.found;);',
+    '(way.found; relation.found;)->.areas;',
+    '(.areas; - .parks;);',
     'out tags bb qt;',
+    '.parks out body geom qt;',
   ].join('\n')
 }
 
@@ -116,6 +152,15 @@ export interface OverpassElement {
   lon?: number
   bounds?: { minlat: number; minlon: number; maxlat: number; maxlon: number }
   tags?: Record<string, string>
+  /** A way's points, from `out geom` (null where a point is missing). */
+  geometry?: ({ lat: number; lon: number } | null)[]
+  /** A relation's members, with their points from `out geom`. */
+  members?: {
+    type: 'node' | 'way' | 'relation'
+    ref: number
+    role: string
+    geometry?: ({ lat: number; lon: number } | null)[]
+  }[]
 }
 
 /** A candidate place from OSM, as stored in places (source 'osm'). */
@@ -148,7 +193,8 @@ export function parseElements(
       : null
     places.push({
       id: `${element.type}/${element.id}`,
-      name: tags.name.trim(),
+      // Only campgrounds can be unnamed; finishCampgrounds() names them.
+      name: tags.name?.trim() ?? '',
       kind: candidate.kind,
       category: candidate.category,
       wikidata,
@@ -167,7 +213,7 @@ function positionOf(
       return null
     return { lat: element.lat!, lng: element.lon!, outline: null }
   }
-  const b = element.bounds
+  const b = element.bounds ?? geometryBounds(element)
   if (!b || ![b.minlat, b.minlon, b.maxlat, b.maxlon].every(Number.isFinite)) {
     return null
   }
@@ -181,6 +227,24 @@ function positionOf(
       [b.maxlat, b.minlon],
     ],
   }
+}
+
+/** A bounding box from `out geom` points, for an element that lacks one. */
+function geometryBounds(element: OverpassElement) {
+  const points = [
+    ...(element.geometry ?? []),
+    ...(element.members ?? []).flatMap((m) => m.geometry ?? []),
+  ].filter((p) => p !== null)
+  if (points.length === 0) return undefined
+  // A loop, not Math.min(...): a big park has too many points to spread.
+  const box = { minlat: 90, minlon: 180, maxlat: -90, maxlon: -180 }
+  for (const { lat, lon } of points) {
+    box.minlat = Math.min(box.minlat, lat)
+    box.minlon = Math.min(box.minlon, lon)
+    box.maxlat = Math.max(box.maxlat, lat)
+    box.maxlon = Math.max(box.maxlon, lon)
+  }
+  return box
 }
 
 function storedTags(tags: Record<string, string>): Record<string, string> {
@@ -227,7 +291,7 @@ export async function fetchOverpass(
     }
     try {
       // GET, as overpass-api.de answers form POSTs from Supabase with HTTP
-      // 406. The query fits in a URL (a tile's is about 1.5 kB encoded).
+      // 406. The query fits in a URL (a tile's is about 2.6 kB encoded).
       const url = new URL(server)
       url.searchParams.set('data', query)
       const response = await fetchFn(url.toString(), {
