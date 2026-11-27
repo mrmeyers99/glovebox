@@ -19,8 +19,10 @@ import {
   type MapRef,
 } from 'react-map-gl/maplibre'
 import type { ExpressionSpecification } from 'maplibre-gl'
+import type { LatLng as RouteLatLng } from '../lib/corridor'
 import type { Day, Stop } from '../lib/database.types'
 import type { LatLng } from '../lib/geocode'
+import type { Suggestion } from '../lib/suggestions'
 import type { TripSummary } from '../lib/tripMath'
 import { toDayInput, toStopInput } from '../lib/tripRows'
 import {
@@ -41,6 +43,7 @@ import {
   type StopSelection,
 } from './mapView'
 import { mapPoint } from './mapAdd'
+import { SuggestionMarkers } from './SuggestionMarkers'
 import { useDayPalette } from './useDayPalette'
 
 // MapLibre finds its worker next to its own module file. Vite moves that
@@ -56,11 +59,17 @@ export default function TripMap({
   selection,
   onSelectStop,
   onAddStopAt,
+  suggestions,
+  corridor,
 }: {
   days: readonly Day[]
   stops: readonly Stop[]
   summary: TripSummary
   showSkipped: boolean
+  /** Suggested places to show, best first; empty when Suggestions is off. */
+  suggestions: readonly Suggestion[]
+  /** The route as lines, for each suggestion's distance from it. */
+  corridor: RouteLatLng[][]
   selection: StopSelection | null
   onSelectStop: (stopId: string) => void
   /** Owners and editors: offers "Add stop here" on right-click / long-press. */
@@ -164,6 +173,7 @@ export default function TripMap({
         compact={false}
         customAttribution={OSM_ATTRIBUTION}
       />
+      <SuggestionMarkers places={suggestions} lines={corridor} />
       {markers.map((marker) => (
         <StopMarkerPin
           key={marker.stopId}
@@ -302,8 +312,9 @@ const StopMarkerPin = memo(function StopMarkerPin({
     <Marker
       longitude={marker.lng}
       latitude={marker.lat}
-      // Draw the selected marker above its neighbours.
-      style={selected ? { zIndex: 1 } : undefined}
+      // Above suggestions (see index.css); the selected one above its neighbours.
+      className="stop-marker-anchor"
+      style={selected ? { zIndex: 3 } : undefined}
     >
       {/* TODO(#15): open StopMenu on right-click / long-press once it's merged. */}
       <button
