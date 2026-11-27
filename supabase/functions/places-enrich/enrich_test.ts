@@ -229,6 +229,36 @@ Deno.test('one article’s HTTP error defers that place only', async () => {
 })
 
 Deno.test(
+  'a pageviews outage (5xx or a bad answer) pauses instead of deferring',
+  async () => {
+    for (const reply of [
+      () => new Response('', { status: 500 }),
+      () => new Response('<html>'),
+    ]) {
+      const { requests, fetchFn } = fakeWikimedia({ pageviews: reply })
+      const clock = fakeClock()
+      const result = await enrichPlaces(
+        [cornPalace, village, tower],
+        testClient(fetchFn, clock),
+        clock.now,
+      )
+      assertEquals(result.deferred, [])
+      assertEquals(result.unfinished, [1, 2])
+      assertEquals(
+        result.enriched.map((e) => e.id),
+        [3],
+      )
+      assertEquals(result.stopped?.retryAt, clock.time + ERROR_PAUSE_MS)
+      // It stops at the first failure.
+      assertEquals(
+        requests.filter((r) => new URL(r.url).host === 'wikimedia.org').length,
+        1,
+      )
+    }
+  },
+)
+
+Deno.test(
   'running out of time leaves the rest for the next run, without pausing',
   async () => {
     const clock = fakeClock()

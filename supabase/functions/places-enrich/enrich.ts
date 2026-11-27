@@ -102,7 +102,7 @@ export async function enrichPlaces(
     try {
       views.set(title, await fetchPageviews(title, client, new Date(now())))
     } catch (error) {
-      if (error instanceof RequestError && error.status !== undefined) {
+      if (isArticleError(error)) {
         // This article's own problem (e.g. HTTP 400 for an odd title).
         console.error(`places-enrich: pageviews for ${title}: ${error.message}`)
         failed.add(title)
@@ -123,6 +123,19 @@ export async function enrichPlaces(
     }
   }
   return result
+}
+
+/**
+ * An HTTP 4xx for one article is that article's problem; a 5xx or a bad
+ * answer means the service is failing, so the worker pauses instead.
+ */
+function isArticleError(error: unknown): error is RequestError {
+  return (
+    error instanceof RequestError &&
+    error.status !== undefined &&
+    error.status >= 400 &&
+    error.status < 500
+  )
 }
 
 /** A place's stored signals and score. No item: category bonus only. */
