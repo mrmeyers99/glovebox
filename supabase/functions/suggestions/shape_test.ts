@@ -40,6 +40,7 @@ function row(fields: Partial<PlaceRow> = {}): PlaceRow {
     score: 1,
     parent_place_id: null,
     parent_score: null,
+    parent_name: null,
     ...fields,
   }
 }
@@ -199,6 +200,7 @@ Deno.test('shapes each place for the client', () => {
     wikipedia_url: 'https://en.wikipedia.org/wiki/Corn_Palace',
     osm_url: 'https://www.openstreetmap.org/way/42',
     amenities: null,
+    parent_name: null,
   })
 })
 
@@ -212,8 +214,26 @@ Deno.test('campgrounds come with their amenities', () => {
     camp,
   ]).places
   assertEquals(suggestion.amenities?.tents, null)
+  assertEquals(suggestion.parent_name, null)
   assertEquals(suggestion.wikipedia_url, null)
   assertEquals(suggestion.image, null)
+})
+
+Deno.test("a place comes with its parent's name", () => {
+  const camp = row({
+    kind: 'campground',
+    category: 'tourism=camp_site',
+    parent_place_id: 999,
+    parent_name: ' Custer State Park ',
+  })
+  const blank = row({ parent_place_id: 998, parent_name: ' ' })
+  const { places } = shapeSuggestions([A], statuses({ [A]: 'done' }), [
+    camp,
+    blank,
+  ])
+  const byId = new Map(places.map((p) => [p.id, p]))
+  assertEquals(byId.get(camp.id)?.parent_name, 'Custer State Park')
+  assertEquals(byId.get(blank.id)?.parent_name, null)
 })
 
 Deno.test('placeImage strips a File: prefix and skips blank names', () => {

@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LatLng } from '../lib/corridor'
 import type { Suggestion } from '../lib/suggestions'
+import { CampgroundMarkers } from './CampgroundMarkers'
 import { SuggestionCard } from './SuggestionCard'
 import { SuggestionMarkers } from './SuggestionMarkers'
 
@@ -33,6 +34,7 @@ const map = vi.hoisted(() => {
     },
     listeners,
     present: true,
+    flyTo: vi.fn(),
   }
 })
 
@@ -301,5 +303,70 @@ describe('SuggestionCard', () => {
     expect(container.querySelector('.suggestion-links')).toBe(null)
     expect(container.querySelector('img')).toBe(null)
     expect(screen.getByText(/On the route/)).toBeTruthy()
+  })
+})
+
+describe('CampgroundMarkers', () => {
+  const camp = place({
+    id: 5,
+    name: 'Pines',
+    kind: 'campground',
+    category: 'tourism=camp_site',
+    lat: 43.71,
+    percentile: 0.1,
+    parent_name: 'Palace Park',
+    amenities: null,
+  })
+  const other = place({
+    id: 6,
+    name: 'Lakeside',
+    kind: 'campground',
+    category: 'tourism=caravan_site',
+    percentile: 0.1,
+  })
+
+  it('draws every campground highlighted, and flies to the stop', () => {
+    map.zoom = 5
+    map.flyTo.mockReset()
+    const onAdd = vi.fn()
+    render(
+      <CampgroundMarkers
+        layer={{
+          center: [43.7, -98.03],
+          dayNumber: 3,
+          places: [camp, other],
+          onAdd,
+        }}
+        inTrip={none}
+      />,
+    )
+    expect(map.flyTo).toHaveBeenCalledWith({
+      center: [-98.03, 43.7],
+      zoom: 10,
+    })
+    // Not thinned out by zoom (one per tile at zoom 5).
+    const pins = screen.getAllByRole('button', { name: /Campground|RV park/ })
+    expect(pins).toHaveLength(2)
+    expect(pins[0].dataset.highlight).toBe('true')
+    fireEvent.click(pins[0])
+    const card = screen.getByRole('article', { name: 'Pines' })
+    expect(card.textContent).toContain('Campground · 0.7 mi away')
+    expect(card.textContent).toContain('In Palace Park')
+    fireEvent.click(
+      screen.getByRole('button', { name: "Add as Day 3's overnight stop" }),
+    )
+    expect(onAdd).toHaveBeenCalledWith(camp)
+  })
+
+  it('waits for the map', () => {
+    map.present = false
+    map.flyTo.mockReset()
+    render(
+      <CampgroundMarkers
+        layer={{ center: [43.7, -98.03], dayNumber: 1, places: [] }}
+        inTrip={none}
+      />,
+    )
+    expect(map.flyTo).not.toHaveBeenCalled()
   })
 })

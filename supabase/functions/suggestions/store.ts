@@ -28,6 +28,8 @@ export interface PlaceRow {
   parent_place_id: number | null
   /** The parent place's score (null if none, or not scored yet). */
   parent_score: number | null
+  /** The parent place's name (null if none). */
+  parent_name: string | null
 }
 
 /** Rows per page: the API's max_rows (supabase/config.jsonc). */

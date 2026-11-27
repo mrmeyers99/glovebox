@@ -17,6 +17,7 @@ import {
 } from '../lib/suggestionFilters'
 import type { Suggestion } from '../lib/suggestions'
 import type { TripSummary } from '../lib/tripMath'
+import type { CampgroundLayer } from './CampgroundMarkers'
 import type { StopSelection } from './mapView'
 import { SuggestionFilters } from './SuggestionFilters'
 import { useSuggestions, type SuggestionsState } from './useSuggestions'
@@ -32,6 +33,8 @@ export function MapPanel({
   onSelectStop,
   onAddStopAt,
   onAddSuggestion,
+  campgrounds,
+  findCampgrounds,
 }: {
   days: readonly Day[]
   stops: readonly Stop[]
@@ -43,6 +46,10 @@ export function MapPanel({
   onAddStopAt?: (point: LatLng) => void
   /** Owners and editors: add a suggested place as a stop. */
   onAddSuggestion?: (place: Suggestion) => void
+  /** An open campground search, highlighted on the map. */
+  campgrounds?: CampgroundLayer | null
+  /** Offered while a day's last stop is selected. */
+  findCampgrounds?: { stopName: string; onFind: () => void } | null
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const hasSize = useHasSize(ref)
@@ -73,6 +80,7 @@ export function MapPanel({
             onAddSuggestion={onAddSuggestion}
             suggestions={shown}
             corridor={lines}
+            campgrounds={campgrounds}
           />
           <div className="map-toggles">
             <label className="map-toggle">
@@ -100,6 +108,16 @@ export function MapPanel({
               />
             )}
             <SuggestionsNote state={suggestions} shown={shown.length} />
+            {findCampgrounds && (
+              <button
+                type="button"
+                className="map-find-campgrounds"
+                onClick={findCampgrounds.onFind}
+              >
+                <span aria-hidden="true">⛺</span> Campgrounds near{' '}
+                {findCampgrounds.stopName}
+              </button>
+            )}
           </div>
         </Suspense>
       )}
