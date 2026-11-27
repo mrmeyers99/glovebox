@@ -15,7 +15,10 @@ import {
   it,
   vi,
 } from 'vitest'
+import type { Session } from '@supabase/supabase-js'
+import { AuthContext } from '../auth/useAuth'
 import type { LatLng } from '../lib/corridor'
+import { DEFAULT_FILTER, filterStorageKey } from '../lib/suggestionFilters'
 import type { TripSummary } from '../lib/tripMath'
 import { MapPanel, SuggestionsNote } from './MapPanel'
 import type { SuggestionsState } from './useSuggestions'
@@ -187,5 +190,145 @@ describe('SuggestionsNote', () => {
         }),
       ),
     ).toBe('')
+  })
+})
+
+describe('MapPanel suggestion filters', () => {
+  const suggestion = (
+    id: number,
+    category: string,
+    percentile: number,
+    lat = 40,
+  ) => ({
+    id,
+    name: `Place ${id}`,
+    kind: 'attraction' as const,
+    category,
+    lat,
+    lng: -100,
+    tile_key: '40_-100',
+    score: 1,
+    percentile,
+    image: null,
+    wikipedia_url: null,
+    osm_url: null,
+  })
+  const places = [
+    suggestion(1, 'tourism=museum', 0.9),
+    suggestion(2, 'leisure=park', 0.3),
+    // About 55 km north of the route's start, beyond every distance limit.
+    suggestion(3, 'tourism=viewpoint', 0.85, 39.5),
+  ]
+  const shownIds = () =>
+    (mocks.mapProps.at(-1)!.suggestions as { id: number }[]).map((p) => p.id)
+
+  const renderAs = (userId: string | null) =>
+    render(
+      <AuthContext.Provider
+        value={{
+          session: userId ? ({ user: { id: userId } } as Session) : null,
+          loading: false,
+        }}
+      >
+        <MapPanel
+          days={[]}
+          stops={[]}
+          summary={summary}
+          selection={null}
+          onSelectStop={() => {}}
+        />
+      </AuthContext.Provider>,
+    )
+
+  afterEach(() => localStorage.clear())
+
+  it('shows the panel only while suggestions are on', async () => {
+    mocks.state = { ...mocks.state, places }
+    renderAs('u1')
+    const toggle = await screen.findByRole('checkbox', { name: 'Suggestions' })
+    expect(screen.queryByText('Filter suggestions')).toBeNull()
+    fireEvent.click(toggle)
+    expect(screen.getByText('Filter suggestions')).toBeTruthy()
+  })
+
+  it('filters the places on the map without fetching again', async () => {
+    mocks.state = { ...mocks.state, places }
+    renderAs('u1')
+    fireEvent.click(
+      await screen.findByRole('checkbox', { name: 'Suggestions' }),
+    )
+    expect(shownIds()).toEqual([1, 2, 3])
+    const calls = mocks.calls.length
+    const lines = mocks.calls.at(-1)?.[0]
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Top picks only' }))
+    expect(shownIds()).toEqual([1, 3])
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Museums' }))
+    expect(shownIds()).toEqual([3])
+    fireEvent.change(
+      screen.getByRole('combobox', { name: 'Distance from route' }),
+      { target: { value: '40' } },
+    )
+    expect(shownIds()).toEqual([])
+    expect(screen.getByRole('status').textContent).toBe(
+      'No places match your filters.',
+    )
+
+    // The hook only re-rendered: same lines, still on, so nothing to fetch.
+    expect(mocks.calls.length).toBeGreaterThan(calls)
+    for (const call of mocks.calls.slice(calls)) {
+      expect(call[0]).toBe(lines)
+      expect(call[1]).toBe(true)
+    }
+  })
+
+  it('remembers the filter per user', async () => {
+    mocks.state = { ...mocks.state, places }
+    renderAs('u1')
+    fireEvent.click(
+      await screen.findByRole('checkbox', { name: 'Suggestions' }),
+    )
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Top picks only' }))
+    cleanup()
+
+    renderAs('u1')
+    fireEvent.click(
+      await screen.findByRole('checkbox', { name: 'Suggestions' }),
+    )
+    expect(shownIds()).toEqual([1, 3])
+    cleanup()
+
+    renderAs('u2')
+    fireEvent.click(
+      await screen.findByRole('checkbox', { name: 'Suggestions' }),
+    )
+    expect(shownIds()).toEqual([1, 2, 3])
+  })
+
+  it("switches to another user's filter when they sign in", async () => {
+    mocks.state = { ...mocks.state, places }
+    localStorage.setItem(
+      filterStorageKey('u2'),
+      JSON.stringify({ ...DEFAULT_FILTER, categories: ['nature'] }),
+    )
+    const { rerender } = renderAs('u1')
+    fireEvent.click(
+      await screen.findByRole('checkbox', { name: 'Suggestions' }),
+    )
+    expect(shownIds()).toEqual([1, 2, 3])
+    rerender(
+      <AuthContext.Provider
+        value={{ session: { user: { id: 'u2' } } as Session, loading: false }}
+      >
+        <MapPanel
+          days={[]}
+          stops={[]}
+          summary={summary}
+          selection={null}
+          onSelectStop={() => {}}
+        />
+      </AuthContext.Provider>,
+    )
+    expect(shownIds()).toEqual([2])
   })
 })
