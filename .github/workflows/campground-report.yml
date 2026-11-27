@@ -1,0 +1,24 @@
+# TEMPORARY (issue #64): runs the campground coverage report against live
+# Overpass, which the development sandbox can't reach. Removed before merge.
+name: Campground report (temporary)
+
+on:
+  push:
+    branches: [claude/project-thread-do4ebf]
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: supabase/functions
+    steps:
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Campground coverage, Mitchell SD to Waterloo IA
+        env:
+          CONTACT_EMAIL: https://github.com/mrmeyers99/glovebox
+        run: deno run --allow-net --allow-env --allow-read places-worker/campground_report.ts | tee "$GITHUB_STEP_SUMMARY"
