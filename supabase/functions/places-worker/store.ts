@@ -28,7 +28,7 @@ export interface TileStore {
   claim(limit: number): Promise<ClaimedTile[]>
   /** Replaces the tile's OSM places and marks it 'done'. Returns the count. */
   store(tileKey: string, places: StoredPlace[]): Promise<number>
-  /** Marks the tile 'failed', to retry at `retryAt`. */
+  /** Marks the tile 'failed', to retry at `retryAt`, if it's still being fetched. */
   fail(tileKey: string, error: string, retryAt: Date): Promise<void>
 }
 
@@ -60,6 +60,8 @@ export function supabaseTileStore(
           next_attempt_at: retryAt.toISOString(),
         })
         .eq('tile_key', tileKey)
+        // A run that outlived its lease must not undo a newer claim's result.
+        .eq('status', 'fetching')
       if (error) throw error
     },
   }

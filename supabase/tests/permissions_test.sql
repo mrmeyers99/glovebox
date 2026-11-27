@@ -535,6 +535,56 @@ do $$ begin
 end $$;
 reset role;
 
+-- Suggestions: the service role queues missing tiles without touching
+-- existing ones; signed-in users read scored places in 'done' tiles.
+set role service_role;
+do $$
+declare v_count bigint;
+begin
+  select count(*) into v_count from public.place_tiles;
+  assert (select array_agg(tile_key || '=' || status order by tile_key)
+      from public.queue_place_tiles(array['43.5_-98.5', '42.0_-92.5', '42.0_-92.5'])) =
+    array['42.0_-92.5=pending', '43.5_-98.5=done'],
+    'queue_place_tiles queues a missing tile once and returns every status';
+  assert (select count(*) from public.place_tiles) = v_count + 1, 'one tile queued';
+  assert (select array_agg(tile_key || '=' || status order by tile_key)
+      from public.queue_place_tiles(array['43.5_-98.5', '42.0_-92.5'])) =
+    array['42.0_-92.5=pending', '43.5_-98.5=done'],
+    'queueing again changes nothing; a done tile is never downgraded';
+  assert (select count(*) from public.place_tiles) = v_count + 1, 'no tile queued twice';
+end $$;
+-- A scored place in a tile that isn't done yet isn't suggested.
+update public.places set score = 1 where source_id = 'node/2';
+reset role;
+
+do $$ begin perform pg_temp.act_as('dave'); end $$;
+do $$
+declare v_row record;
+begin
+  select * into strict v_row
+    from public.suggestion_places(array['43.5_-98.5', '42.0_-92.5'], 'attraction');
+  assert v_row.name = 'Corn Palace' and v_row.score = 5.1
+      and abs(v_row.lat - 43.714) < 1e-9 and abs(v_row.lng - -98.0298) < 1e-9
+      and v_row.tile_key = '43.5_-98.5' and v_row.tags ->> 'website' = 'https://cornpalace.com',
+    'suggestion_places returns scored places in done tiles, with lat/lng';
+  assert (select count(*) from public.suggestion_places(array['43.5_-98.5'], 'campground')) = 0,
+    'suggestion_places filters by kind';
+  begin
+    perform public.queue_place_tiles(array['40.0_-75.0']);
+    assert false, 'signed-in user cannot call queue_place_tiles';
+  exception when insufficient_privilege then null;
+  end;
+end $$;
+reset role;
+
+set role anon;
+do $$ begin
+  perform public.suggestion_places(array['43.5_-98.5'], 'attraction');
+  assert false, 'anon cannot call suggestion_places';
+exception when insufficient_privilege then null;
+end $$;
+reset role;
+
 -- Deleting a park keeps the places inside it, unattached.
 set role service_role;
 delete from public.places where source_id = 'node/2';
@@ -547,6 +597,8 @@ reset role;
 -- Tile fill worker: claiming due tiles, storing a tile's places, and the
 -- pg_cron entry point. Service role only.
 set role service_role;
+-- Tiles queued by earlier tests are taken out of the way first.
+update public.place_tiles set status = 'done', fetched_at = now(), next_attempt_at = null;
 insert into public.place_tiles (tile_key, status, requested_at, fetched_at, attempts, next_attempt_at) values
   ('10.0_10.0', 'pending',  now() - interval '1 minute', null, 0, null),
   ('10.0_10.5', 'pending',  now() - interval '2 minutes', null, 0, null),

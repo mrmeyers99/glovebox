@@ -199,6 +199,31 @@ export type Database = {
         }
         Returns: number
       }
+      // Scored places in 'done' tiles, for the suggestions Edge Function.
+      suggestion_places: {
+        Args: { p_tile_keys: string[]; p_kind: PlaceKind }
+        Returns: (Pick<
+          Place,
+          | 'id'
+          | 'source'
+          | 'source_id'
+          | 'wikidata'
+          | 'name'
+          | 'kind'
+          | 'category'
+          | 'tile_key'
+          | 'tags'
+          | 'image_file'
+          | 'image_credit'
+          | 'image_license'
+          | 'parent_place_id'
+        > & { lat: number; lng: number; score: number })[]
+      }
+      // Service role only: queues missing tiles, returns every tile's status.
+      queue_place_tiles: {
+        Args: { p_tile_keys: string[] }
+        Returns: Pick<PlaceTile, 'tile_key' | 'status'>[]
+      }
       move_stops: {
         Args: {
           p_moves: {

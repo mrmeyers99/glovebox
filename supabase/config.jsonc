@@ -469,6 +469,10 @@
       "verify_jwt": false,
       "import_map": "./functions/deno.json",
     },
+    "suggestions": {
+      "verify_jwt": false,
+      "import_map": "./functions/deno.json",
+    },
     // Background worker, not for users: requireServiceRole() accepts only a secret key.
     "places-worker": {
       "verify_jwt": false,

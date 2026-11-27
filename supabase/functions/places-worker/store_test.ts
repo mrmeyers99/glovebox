@@ -81,6 +81,7 @@ Deno.test('fail marks the tile failed with its retry time', async () => {
   assertEquals(calls[0].method, 'PATCH')
   assertEquals(calls[0].url.pathname, '/rest/v1/place_tiles')
   assertEquals(calls[0].url.searchParams.get('tile_key'), 'eq.43.5_-98.5')
+  assertEquals(calls[0].url.searchParams.get('status'), 'eq.fetching')
   assertEquals(calls[0].body, {
     status: 'failed',
     error: 'Overpass unavailable',
