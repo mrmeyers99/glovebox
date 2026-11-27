@@ -15,6 +15,7 @@ import type { Suggestion } from '../lib/suggestions'
 import { summarizeTrip } from '../lib/tripMath'
 import { toDayInput, toStopInput } from '../lib/tripRows'
 import { TripPage } from './TripPage'
+import type { CampgroundsState } from './useCampgrounds'
 
 const trip: Trip = {
   id: 't1',
@@ -75,6 +76,23 @@ const mocks = vi.hoisted(() => ({
   insertDayAfter: vi.fn(),
   days: [] as Day[],
   mapPanel: {} as Record<string, unknown>,
+  campgrounds: null as CampgroundsState | null,
+  campgroundPoints: [] as unknown[],
+  campgroundRows: [] as { id: number }[],
+}))
+
+const noCampgrounds: CampgroundsState = {
+  places: [],
+  nearby: [],
+  pending: 0,
+  failed: 0,
+  error: false,
+}
+vi.mock('./useCampgrounds', () => ({
+  useCampgrounds: (point: unknown) => {
+    mocks.campgroundPoints.push(point)
+    return point ? (mocks.campgrounds ?? noCampgrounds) : noCampgrounds
+  },
 }))
 
 vi.mock('./useTrip', () => ({
@@ -124,7 +142,18 @@ vi.mock('./MapPanel', () => ({
   },
 }))
 vi.mock('../lib/supabase', () => ({
-  supabase: { functions: { invoke: vi.fn() } },
+  supabase: {
+    functions: { invoke: vi.fn() },
+    // The places lookup for stops added from a campground.
+    from: () => ({
+      select: () => ({
+        in: () => ({
+          eq: () =>
+            Promise.resolve({ data: mocks.campgroundRows, error: null }),
+        }),
+      }),
+    }),
+  },
 }))
 
 beforeAll(() => {
@@ -140,6 +169,9 @@ beforeEach(() => {
   mocks.canEdit = true
   mocks.move.mockReset()
   mocks.setSkipped.mockReset()
+  mocks.campgrounds = null
+  mocks.campgroundPoints = []
+  mocks.campgroundRows = []
 })
 afterEach(cleanup)
 
@@ -341,5 +373,129 @@ describe('TripPage, adding a suggested place', () => {
     mocks.stops = []
     renderPage()
     expect(mocks.mapPanel.onAddSuggestion).toBeUndefined()
+  })
+})
+
+describe('TripPage, campgrounds near the end of a day', () => {
+  const camp = (id: number, name: string) =>
+    ({
+      id,
+      name,
+      kind: 'campground',
+      category: 'tourism=camp_site',
+      lat: 0.01,
+      lng: 0,
+      tile_key: '0.0_0.0',
+      score: 1,
+      percentile: 0.5,
+      image: null,
+      wikipedia_url: null,
+      osm_url: null,
+      amenities: null,
+      parent_name: null,
+    }) satisfies Suggestion
+  const pines = camp(7, 'Pines Campground')
+  const lakeside = camp(8, 'Lakeside RV Park')
+  const found = (): CampgroundsState => ({
+    places: [pines, lakeside],
+    nearby: [
+      { place: pines, km: 1 },
+      { place: lakeside, km: 2 },
+    ],
+    pending: 0,
+    failed: 0,
+    error: false,
+  })
+
+  it("lists campgrounds near a day's last stop, and adds one as its last stop", () => {
+    mocks.campgrounds = found()
+    renderPage()
+    // Not on the last day.
+    const find = screen.getAllByRole('button', { name: /Find campgrounds/ })
+    expect(find).toHaveLength(1)
+    fireEvent.click(find[0])
+    screen.getByRole('heading', { name: 'Campgrounds near Museum' })
+    expect(mocks.campgroundPoints.at(-1)).toEqual([0, 0])
+    const layer = mocks.mapPanel.campgrounds as {
+      places: Suggestion[]
+      dayNumber: number
+      onAdd?: unknown
+    }
+    expect(layer.places.map((p) => p.name)).toEqual([
+      'Pines Campground',
+      'Lakeside RV Park',
+    ])
+    expect(layer.dayNumber).toBe(1)
+    expect(layer.onAdd).toBeTypeOf('function')
+    fireEvent.click(
+      screen.getAllByRole('button', {
+        name: "Add as Day 1's overnight stop",
+      })[1],
+    )
+    screen.getByRole('heading', { name: 'Add to trip' })
+    expect(screen.getByRole('textbox', { name: 'Name' })).toHaveProperty(
+      'value',
+      'Lakeside RV Park',
+    )
+    expect(screen.getByRole('combobox', { name: 'Day' })).toHaveProperty(
+      'value',
+      'd1',
+    )
+  })
+
+  it('goes back to the days', () => {
+    renderPage()
+    fireEvent.click(screen.getByRole('button', { name: /Find campgrounds/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Back to days' }))
+    screen.getByRole('heading', { name: 'Day 1' })
+    expect(mocks.mapPanel.campgrounds).toBeNull()
+  })
+
+  it("is offered on the map while a day's last stop is selected", () => {
+    // The list scrolls to a stop selected on the map.
+    Element.prototype.scrollIntoView ??= () => {}
+    renderPage()
+    const select = mocks.mapPanel.onSelectStop as (id: string) => void
+    act(() => select('s1'))
+    expect(mocks.mapPanel.findCampgrounds).toBeNull()
+    act(() => select('s2'))
+    const offer = mocks.mapPanel.findCampgrounds as {
+      stopName: string
+      onFind: () => void
+    }
+    expect(offer.stopName).toBe('Museum')
+    act(() => offer.onFind())
+    screen.getByRole('heading', { name: 'Campgrounds near Museum' })
+    expect(screen.getByRole('tab', { name: 'List' })).toHaveProperty(
+      'ariaSelected',
+      'true',
+    )
+    // Already open for that day.
+    expect(mocks.mapPanel.findCampgrounds).toBeNull()
+  })
+
+  it('lets viewers look but not add', () => {
+    mocks.canEdit = false
+    mocks.campgrounds = found()
+    renderPage()
+    fireEvent.click(screen.getByRole('button', { name: /Find campgrounds/ }))
+    screen.getByRole('heading', { name: 'Campgrounds near Museum' })
+    expect(screen.queryByRole('button', { name: /overnight stop/ })).toBeNull()
+    expect(
+      (mocks.mapPanel.campgrounds as { onAdd?: unknown }).onAdd,
+    ).toBeUndefined()
+  })
+
+  it('shows a day that already ends at a campground, and finds others', async () => {
+    mocks.stops = [diner, { ...museum, name: 'Pines', place_id: 7 }]
+    mocks.campgroundRows = [{ id: 7 }]
+    mocks.campgrounds = found()
+    renderPage()
+    await screen.findByText('Overnight at')
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Find other campgrounds' }),
+    )
+    screen.getByRole('heading', { name: 'Other campgrounds near Pines' })
+    screen.getByText("Day 1's overnight stop")
   })
 })

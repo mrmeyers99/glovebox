@@ -264,6 +264,8 @@ export type Database = {
           score: number
           /** The parent place's score; null without a parent or until scored. */
           parent_score: number | null
+          /** The parent place's name; null without a parent. */
+          parent_name: string | null
         })[]
       }
       // Done tiles that still have unscored places of a kind.

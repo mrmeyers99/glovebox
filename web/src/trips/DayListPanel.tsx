@@ -154,6 +154,8 @@ export function DayListPanel({
   menuDayId,
   onOpenDayMenu,
   presence,
+  onFindCampgrounds,
+  campgroundPlaceIds,
 }: {
   trip: Trip
   days: Day[]
@@ -183,6 +185,10 @@ export function DayListPanel({
   onOpenDayMenu?: OpenDayMenu
   /** Who else is editing which stop or day, from usePresence. */
   presence?: PresenceIndex
+  /** Offers campgrounds near the end of each day but the last. */
+  onFindCampgrounds?: (dayId: string) => void
+  /** Places that are campgrounds, to show a day's overnight campground. */
+  campgroundPlaceIds?: ReadonlySet<number>
 }) {
   // Each leg is shown above the stop it arrives at.
   const legsByArrival = useMemo(
@@ -354,6 +360,10 @@ export function DayListPanel({
               }
               editors={presence?.days.get(day.dayId)}
               stopEditors={presence?.stops}
+              onFindCampgrounds={
+                i < summary.days.length - 1 ? onFindCampgrounds : undefined
+              }
+              campgroundPlaceIds={campgroundPlaceIds}
             />
           ))}
         </ol>
@@ -415,6 +425,8 @@ function DayCard({
   promptEnd,
   editors,
   stopEditors,
+  onFindCampgrounds,
+  campgroundPlaceIds,
 }: {
   summary: DaySummary
   notes: string | null
@@ -444,6 +456,9 @@ function DayCard({
   editors?: Peer[]
   /** Others editing stops, by stop id. */
   stopEditors?: Map<string, Peer[]>
+  /** Not for the trip's last day. */
+  onFindCampgrounds?: (dayId: string) => void
+  campgroundPlaceIds?: ReadonlySet<number>
 }) {
   const headingId = `day-${summary.dayId}`
   // The whole card is a drop zone, so stops can land on a rest day.
@@ -527,6 +542,14 @@ function DayCard({
         <TripEndPrompt kind="end" onSetTripEnd={onSetTripEnd} />
       )}
 
+      {onFindCampgrounds && (
+        <Overnight
+          stops={stops}
+          campgroundPlaceIds={campgroundPlaceIds}
+          onFind={() => onFindCampgrounds(summary.dayId)}
+        />
+      )}
+
       {onAddStop && (
         <button
           type="button"
@@ -545,6 +568,44 @@ function DayCard({
         className="day-totals"
       />
     </li>
+  )
+}
+
+/**
+ * Where the day ends for the night: its overnight campground, when its last
+ * stop was added from one, and a way to look for campgrounds near it.
+ */
+function Overnight({
+  stops,
+  campgroundPlaceIds,
+  onFind,
+}: {
+  stops: Stop[]
+  campgroundPlaceIds?: ReadonlySet<number>
+  onFind: () => void
+}) {
+  const last = stops.findLast((s) => !s.skipped)
+  if (!last) return null
+  const camping =
+    last.place_id !== null && (campgroundPlaceIds?.has(last.place_id) ?? false)
+  return (
+    <p className="day-overnight">
+      {camping && (
+        <span>
+          <span aria-hidden="true">⛺</span> Overnight at{' '}
+          <strong>{last.name}</strong>
+        </span>
+      )}
+      <button type="button" className="day-find-campgrounds" onClick={onFind}>
+        {camping ? (
+          'Find other campgrounds'
+        ) : (
+          <>
+            <span aria-hidden="true">⛺</span> Find campgrounds
+          </>
+        )}
+      </button>
+    </p>
   )
 }
 

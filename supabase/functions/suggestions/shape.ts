@@ -52,6 +52,8 @@ export interface Suggestion {
   osm_url: string | null
   /** Only for campgrounds. */
   amenities: CampgroundAmenities | null
+  /** The place it is part of, such as a campground's park. */
+  parent_name: string | null
 }
 
 export interface SuggestionsResponse {
@@ -151,6 +153,7 @@ function toSuggestion(row: PlaceRow, percentile: number): Suggestion {
     ),
     osm_url: osmUrl(row),
     amenities: row.kind === 'campground' ? amenities(row.category, tags) : null,
+    parent_name: row.parent_name?.trim() || null,
   }
 }
 

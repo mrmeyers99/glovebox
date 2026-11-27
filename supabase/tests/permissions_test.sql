@@ -573,12 +573,14 @@ begin
       and abs(v_row.lat - 43.714) < 1e-9 and abs(v_row.lng - -98.0298) < 1e-9
       and v_row.tile_key = '43.5_-98.5' and v_row.tags ->> 'website' = 'https://cornpalace.com',
     'suggestion_places returns scored places in done tiles, with lat/lng';
-  assert v_row.parent_score is null, 'a place without a parent has no parent_score';
+  assert v_row.parent_score is null and v_row.parent_name is null,
+    'a place without a parent has no parent_score or parent_name';
   select * into strict v_row
     from public.suggestion_places(array['43.5_-98.5'], 'campground');
   assert v_row.name = 'Campground at Corn Palace' and v_row.score = 0.1
-      and v_row.parent_score = 5.1 and (v_row.tags -> 'amenities' ->> 'tents')::boolean,
-    'suggestion_places filters by kind and returns the parent''s score';
+      and v_row.parent_score = 5.1 and v_row.parent_name = 'Corn Palace'
+      and (v_row.tags -> 'amenities' ->> 'tents')::boolean,
+    'suggestion_places filters by kind and returns the parent''s score and name';
   assert not exists (select 1
       from public.scoring_place_tiles(array['43.5_-98.5', '42.0_-92.5'], 'attraction')),
     'scoring_place_tiles: a done tile with every place scored, and a tile not done, are not scoring';
