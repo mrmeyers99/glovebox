@@ -10,7 +10,7 @@ import type { Leg } from './tripMath'
 export type LatLng = [number, number]
 
 /** How far either side of the route to look for suggestions, in km. */
-export const CORRIDOR_RADIUS_KM = 40
+export const CORRIDOR_RADIUS_KM = 80
 
 /** Tile size in degrees; matches public.place_tile_key() in the database. */
 export const TILE_DEG = 0.5
@@ -97,12 +97,16 @@ export function sampleLine(line: LatLng[], stepKm = SAMPLE_STEP_KM): LatLng[] {
   let travelled = 0
   for (let i = 1; i < line.length; i++) {
     const a = line[i - 1]
-    const b = line[i]
+    // Take the short way round across the antimeridian.
+    const b: LatLng = [line[i][0], a[1] + wrapLng(line[i][1] - a[1])]
     const length = haversineKm(a, b)
     let along = stepKm - travelled
     while (along < length) {
       const t = along / length
-      samples.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t])
+      samples.push([
+        a[0] + (b[0] - a[0]) * t,
+        wrapLng(a[1] + (b[1] - a[1]) * t),
+      ])
       along += stepKm
     }
     travelled = length - (along - stepKm)

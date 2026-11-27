@@ -71,7 +71,7 @@ describe('tilesNear', () => {
 
   it('reaches as far as the radius in every direction', () => {
     const point: LatLng = [42.25, -96.25]
-    const keys = tilesNear(point, CORRIDOR_RADIUS_KM)
+    const keys = tilesNear(point, 40)
     // 40 km is about 0.36° of latitude and 0.49° of longitude here.
     expect(keys.has('41.5_-96.5')).toBe(true)
     expect(keys.has('42.5_-96.5')).toBe(true)
@@ -97,6 +97,20 @@ describe('tilesNear', () => {
 })
 
 describe('sampleLine', () => {
+  it('samples the short way across the antimeridian', () => {
+    const samples = sampleLine(
+      [
+        [52, 179.9],
+        [52, -179.9],
+      ],
+      5,
+    )
+    // ~13.7 km: samples at 5 and 10 km, then the end.
+    expect(samples).toHaveLength(4)
+    for (const [, lng] of samples) expect(Math.abs(lng)).toBeGreaterThan(179.8)
+    expect(samples[samples.length - 1]).toEqual([52, -179.9])
+  })
+
   it('returns nothing for an empty line and the point for a single one', () => {
     expect(sampleLine([])).toEqual([])
     expect(sampleLine([[42, -96]])).toEqual([[42, -96]])
@@ -131,6 +145,19 @@ describe('sampleLine', () => {
 })
 
 describe('corridorTiles', () => {
+  it('takes the short way across the antimeridian', () => {
+    const keys = corridorTiles(
+      [
+        [
+          [52.25, 179.6],
+          [52.25, -179.6],
+        ],
+      ],
+      1,
+    )
+    expect(sorted(keys)).toEqual(['52.0_-180.0', '52.0_179.5'])
+  })
+
   it('is empty without route lines', () => {
     expect(corridorTiles([])).toEqual(new Set())
     expect(corridorTiles([[]])).toEqual(new Set())
@@ -163,15 +190,19 @@ describe('corridorTiles', () => {
   it('includes every place within the radius of the route', () => {
     const route = line([41.6, -93.6], [44.95, -93.27], 50)
     const keys = corridorTiles([route])
-    // Points either side of the route at just under 40 km.
+    // Points either side of the route just inside the corridor radius.
     for (let i = 0; i <= 100; i++) {
       const t = i / 100
       const lat = 41.6 + 3.35 * t
       const lng = -93.6 + 0.33 * t
       for (const side of [-1, 1]) {
-        const offset = (side * 39.9) / (111.2 * Math.cos((lat * Math.PI) / 180))
+        const offset =
+          (side * (CORRIDOR_RADIUS_KM - 0.1)) /
+          (111.2 * Math.cos((lat * Math.PI) / 180))
         const place: LatLng = [lat, lng + offset]
-        expect(distanceFromRoute(place, [route])).toBeLessThan(40)
+        expect(distanceFromRoute(place, [route])).toBeLessThan(
+          CORRIDOR_RADIUS_KM,
+        )
         expect(keys.has(tileKey(...place))).toBe(true)
       }
     }
@@ -201,13 +232,16 @@ describe('corridorTiles', () => {
     const started = performance.now()
     const keys = corridorTiles([route])
     expect(performance.now() - started).toBeLessThan(500)
-    // Two rows of tiles (the 40 km reach, ~0.38°, stays inside 39.5–40.5)
-    // across ~72 columns.
-    expect(keys.has('39.5_-120.5')).toBe(true)
-    expect(keys.has('40.0_-85.0')).toBe(true)
-    expect(keys.has('40.5_-100.0')).toBe(false)
-    expect(keys.size).toBeGreaterThan(140)
-    expect(keys.size).toBeLessThan(160)
+    // Four rows of tiles (the 80 km reach is ~0.74° of latitude, so
+    // 39.26–40.74) across ~75 columns.
+    expect(keys.has('39.0_-100.0')).toBe(true)
+    expect(keys.has('40.5_-100.0')).toBe(true)
+    expect(keys.has('38.5_-100.0')).toBe(false)
+    expect(keys.has('41.0_-100.0')).toBe(false)
+    expect(keys.has('40.0_-121.0')).toBe(true)
+    expect(keys.has('40.0_-84.0')).toBe(true)
+    expect(keys.size).toBeGreaterThan(280)
+    expect(keys.size).toBeLessThanOrEqual(300)
   })
 })
 
