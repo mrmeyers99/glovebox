@@ -184,10 +184,7 @@ export function wikipediaUrl(
   const match = /^([a-z][a-z-]{1,11}):(.+)$/.exec(tag?.trim() ?? '')
   if (match) {
     const title = encodeURIComponent(match[2].trim().replace(/ /g, '_'))
-    return `https://${match[1]}.wikipedia.org/wiki/${title.replace(
-      /%2F/g,
-      '/',
-    )}`
+    return `https://${match[1]}.wikipedia.org/wiki/${title.replace(/%2F/g, '/')}`
   }
   if (wikidata && /^Q\d+$/.test(wikidata)) {
     return `https://www.wikidata.org/wiki/Special:GoToLinkedPage/enwiki/${wikidata}`
