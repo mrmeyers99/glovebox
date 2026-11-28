@@ -793,6 +793,13 @@ do $$ begin
   assert (select url from net.calls) = 'https://ref.supabase.co/functions/v1/places-worker'
     and (select headers ->> 'apikey' from net.calls) = 'sb_secret_x',
     'calls places-worker with the secret key';
+
+  insert into public.worker_pauses values ('places-worker', now() + interval '5 minutes', 'busy');
+  assert public.invoke_places_worker() is null, 'no call while the worker is paused';
+  update public.worker_pauses set paused_until = now() - interval '1 second'
+    where worker = 'places-worker';
+  assert public.invoke_places_worker() = 42, 'calls the worker again once the pause is over';
+  delete from public.worker_pauses where worker = 'places-worker';
 end $$;
 
 -- Enrichment worker: claiming due places, pausing, storing results, and the

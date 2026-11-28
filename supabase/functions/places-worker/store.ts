@@ -31,6 +31,8 @@ export interface TileStore {
   store(tileKey: string, places: StoredPlace[]): Promise<number>
   /** Marks the tile 'failed', to retry at `retryAt`, if it's still being fetched. */
   fail(tileKey: string, error: string, retryAt: Date): Promise<void>
+  /** Pauses the worker (worker_pauses) until `until`. */
+  pause(until: Date, reason: string): Promise<void>
 }
 
 export function supabaseTileStore(
@@ -63,6 +65,14 @@ export function supabaseTileStore(
         .eq('tile_key', tileKey)
         // A run that outlived its lease must not undo a newer claim's result.
         .eq('status', 'fetching')
+      if (error) throw error
+    },
+    async pause(until, reason) {
+      const { error } = await client().from('worker_pauses').upsert({
+        worker: 'places-worker',
+        paused_until: until.toISOString(),
+        reason,
+      })
       if (error) throw error
     },
   }

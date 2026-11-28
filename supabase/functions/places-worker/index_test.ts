@@ -8,6 +8,7 @@ import {
   createHandler,
   type Deps,
   MAX_TILES_PER_RUN,
+  PAUSE_MS,
   START_BEFORE_MS,
 } from './index.ts'
 import type { ClaimedTile, StoredPlace, TileStore } from './store.ts'
@@ -19,6 +20,7 @@ Deno.env.set('CONTACT_EMAIL', 'ops@example.com')
 function memoryStore(due: string[], overrides: Partial<TileStore> = {}) {
   const stored = new Map<string, StoredPlace[]>()
   const failed: { tileKey: string; error: string; retryAt: Date }[] = []
+  const pauses: { until: Date; reason: string }[] = []
   const queue = [...due]
   const store: TileStore = {
     claim(limit) {
@@ -35,9 +37,13 @@ function memoryStore(due: string[], overrides: Partial<TileStore> = {}) {
       failed.push({ tileKey, error, retryAt })
       return Promise.resolve()
     },
+    pause(until, reason) {
+      pauses.push({ until, reason })
+      return Promise.resolve()
+    },
     ...overrides,
   }
-  return { store, stored, failed, queue }
+  return { store, stored, failed, pauses, queue }
 }
 
 function overpass(reply: () => Response = () => Response.json(fixture)) {
@@ -160,16 +166,42 @@ Deno.test('does nothing when no tile is due', async () => {
 Deno.test(
   'marks a tile failed with a back-off when Overpass fails',
   async () => {
-    const { store, failed } = memoryStore(['43.5_-98.5'])
+    const { store, failed, pauses, queue } = memoryStore([
+      '43.5_-98.5',
+      '43.5_-98.0',
+    ])
     const { fetchFn } = overpass(() => new Response('busy', { status: 429 }))
     const now = Date.parse('2026-11-27T00:00:00Z')
     const res = await run({ store, fetchFn, now: () => now })
     const body = await res.json()
+    assertEquals(body.tiles.length, 1)
     assertEquals(body.tiles[0].status, 'failed')
+    assertEquals(body.tiles[0].overpass_unavailable, true)
     assertStringIncludes(body.tiles[0].error, 'overpass.example: HTTP 429')
     // Second failure in a row: retried in an hour.
     assertEquals(failed.length, 1)
     assertEquals(failed[0].retryAt.toISOString(), '2026-11-27T01:00:00.000Z')
+    // No server answered: the worker pauses instead of trying the next tile.
+    assertEquals(body.paused_until, '2026-11-27T00:05:00.000Z')
+    assertEquals(pauses.length, 1)
+    assertEquals(pauses[0].until.getTime(), now + PAUSE_MS)
+    assertStringIncludes(pauses[0].reason, 'HTTP 429')
+    assertEquals(queue, ['43.5_-98.0'])
+  },
+)
+
+Deno.test(
+  'stops the run without pausing when the pause cannot be stored',
+  async () => {
+    const { store, queue } = memoryStore(['43.5_-98.5', '43.5_-98.0'], {
+      pause: () => Promise.reject(new Error('database down')),
+    })
+    const { fetchFn } = overpass(() => new Response('busy', { status: 429 }))
+    const res = await run({ store, fetchFn })
+    const body = await res.json()
+    assertEquals(body.tiles.length, 1)
+    assertEquals(body.paused_until, undefined)
+    assertEquals(queue, ['43.5_-98.0'])
   },
 )
 
