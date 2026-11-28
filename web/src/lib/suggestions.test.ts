@@ -31,6 +31,7 @@ const raw = {
   percentile: 0.95,
   image: {
     thumbnail_url: 'https://commons.wikimedia.org/thumb.jpg',
+    marker_url: 'https://commons.wikimedia.org/marker.jpg',
     page_url: 'https://commons.wikimedia.org/wiki/File:Corn.jpg',
     credit: 'Jane Doe',
     license: 'CC BY-SA 4.0',
@@ -151,6 +152,7 @@ describe('parseSuggestion', () => {
       percentile: 1,
       image: {
         thumbnail_url: 'https://t',
+        marker_url: null,
         page_url: 'https://p',
         credit: null,
         license: null,

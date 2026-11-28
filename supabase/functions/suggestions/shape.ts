@@ -13,10 +13,20 @@ import type { PlaceRow, TileStatus } from './store.ts'
 /** Width of the Commons thumbnail, in pixels. */
 export const THUMBNAIL_WIDTH = 320
 
+/**
+ * Width of the map marker's photo, in pixels: enough for a 32 px marker on a
+ * 2x screen. Commons rounds widths up to its standard thumbnail sizes (60,
+ * 120, 250, 330, ...) and asking for 64 gets the 120 px file anyway, so ask
+ * for that one and share it with every other viewer's cache.
+ */
+export const MARKER_WIDTH = 120
+
 export type { CampgroundAmenities }
 
 export interface PlaceImage {
   thumbnail_url: string
+  /** A small copy for the map marker (MARKER_WIDTH). */
+  marker_url: string
   /** The file's Commons page, where its author and licence are given in full. */
   page_url: string
   credit: string | null
@@ -168,8 +178,10 @@ function commonsPath(file: string): string {
 export function placeImage(row: PlaceRow): PlaceImage | null {
   if (!row.image_file?.trim()) return null
   const path = commonsPath(row.image_file.trim())
+  const file = `https://commons.wikimedia.org/wiki/Special:FilePath/${path}`
   return {
-    thumbnail_url: `https://commons.wikimedia.org/wiki/Special:FilePath/${path}?width=${THUMBNAIL_WIDTH}`,
+    thumbnail_url: `${file}?width=${THUMBNAIL_WIDTH}`,
+    marker_url: `${file}?width=${MARKER_WIDTH}`,
     page_url: `https://commons.wikimedia.org/wiki/File:${path}`,
     credit: row.image_credit,
     license: row.image_license,
